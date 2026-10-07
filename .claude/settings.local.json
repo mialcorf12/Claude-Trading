@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__engram__mem_search",
+      "Bash(eza -la /Users/albertocordero/Documents/PI/Claude-Trading)",
+      "Bash(engram save *)",
+      "mcp__engram__mem_session_summary",
+      "Bash(gentle-ai --version)",
+      "Bash(gentle-ai --help)",
+      "Bash(gentle-ai install *)"
+    ]
+  }
+}
