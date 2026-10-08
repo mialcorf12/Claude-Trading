@@ -267,7 +267,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
             finally
             {
-                AuthResponseDto dummy;
+                TaskCompletionSource<AuthResponseDto> dummy;
                 pendingRequests.TryRemove(requestId, out dummy);
             }
         }
@@ -451,9 +451,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 int maxQty = ExtractJsonInt(line, "max_qty");
                 string reason = ExtractJsonString(line, "reason");
 
-                if (!string.IsNullOrEmpty(reqId) && pendingRequests.ContainsKey(reqId))
+                TaskCompletionSource<AuthResponseDto> tcs;
+                if (!string.IsNullOrEmpty(reqId) && pendingRequests.TryGetValue(reqId, out tcs))
                 {
-                    pendingRequests[reqId].TrySetResult(new AuthResponseDto
+                    tcs.TrySetResult(new AuthResponseDto
                     {
                         RequestId = reqId,
                         Allow = allow,
