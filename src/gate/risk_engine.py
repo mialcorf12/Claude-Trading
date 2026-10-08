@@ -109,8 +109,10 @@ class RiskEngine:
 
         acc.current_positions.clear()
         for p in positions:
-            acc.current_positions[p.instrument] = p
-        logger.info("Cuenta %s reconciliada con %d posiciones activas", account_name, len(positions))
+            if p.qty > 0 and p.side != "FLAT":
+                acc.current_positions[p.instrument] = p
+        active_count = len(acc.current_positions)
+        logger.info("Cuenta %s reconciliada con %d posiciones activas", account_name, active_count)
 
     def update_telemetry(self, t: TelemetryUpdate) -> None:
         acc = self.accounts.get(t.account)

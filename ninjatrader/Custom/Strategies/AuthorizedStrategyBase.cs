@@ -319,13 +319,15 @@ namespace NinjaTrader.NinjaScript.Strategies
                               Position != null && Position.MarketPosition == MarketPosition.Short ? "SHORT" : "FLAT";
                 double entryPrice = Position != null ? Position.AveragePrice : 0.0;
 
+                string posJsonArray = currentPosQty > 0
+                    ? string.Format("[{{\"instrument\":\"{0}\",\"qty\":{1},\"entry_price\":{2:0.##},\"side\":\"{3}\"}}]",
+                        Instrument != null ? Instrument.MasterInstrument.Name : "NQ", currentPosQty, entryPrice, side)
+                    : "[]";
+
                 string jsonRec = string.Format(
-                    "{{\"type\":\"RECONCILE\",\"account\":\"{0}\",\"positions\":[{{\"instrument\":\"{1}\",\"qty\":{2},\"entry_price\":{3:0.##},\"side\":\"{4}\"}}]}}\n",
+                    "{{\"type\":\"RECONCILE\",\"account\":\"{0}\",\"positions\":{1}}}\n",
                     Account != null ? Account.Name : "Sim101",
-                    Instrument != null ? Instrument.MasterInstrument.Name : "NQ",
-                    currentPosQty,
-                    entryPrice,
-                    side
+                    posJsonArray
                 );
                 SendRaw(jsonRec);
                 LogAudit("[RECONCILE] Información de posición enviada al Gate");
