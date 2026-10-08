@@ -98,8 +98,8 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Calculate = Calculate.OnBarClose;
                 EntriesPerDirection = 1;
                 EntryHandling = EntryHandling.AllEntries;
-                IsExitOnSessionCloseStrategy = true;
-                ExitOnSessionCloseSeconds = 300; // 5 minutos antes del cierre (15:55 ET)
+                IsExitOnSessionCloseStrategy = false; // El aplanado de sesión lo comanda Python mediante el Gate
+                ExitOnSessionCloseSeconds = 300;
                 IsFillLimitOnTouch = false;
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
