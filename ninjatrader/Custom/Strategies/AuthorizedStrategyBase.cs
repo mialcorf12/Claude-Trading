@@ -110,18 +110,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
             }
-            else if (State == State.DataLoaded)
+            else if (State == State.Historical || State == State.Transition || State == State.Realtime)
             {
-                // Si estamos en un gráfico, conectar el socket inmediatamente sin esperar ticks de mercado
-                if (EnableGate && ChartControl != null && (tcpClient == null || !tcpClient.Connected))
-                {
-                    ConnectToGate();
-                }
-            }
-            else if (State == State.Transition || State == State.Realtime)
-            {
-                // Conectar en Transition o Realtime si el Gate está habilitado y no estamos en backtest
-                if (EnableGate && !IsBacktestMode() && (tcpClient == null || !tcpClient.Connected))
+                // Conectar en cuanto inicie la estrategia en el gráfico sin esperar al primer tick en vivo
+                if (EnableGate && (tcpClient == null || !tcpClient.Connected))
                 {
                     ConnectToGate();
                 }
