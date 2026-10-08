@@ -85,6 +85,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region State Management
         protected override void OnStateChange()
         {
+            LogAudit($"[STATE] Transición a estado: {State}");
+
             if (State == State.SetDefaults)
             {
                 Description = "Estrategia con autorización de riesgo externa Python <-> NinjaScript";
@@ -104,10 +106,10 @@ namespace NinjaTrader.NinjaScript.Strategies
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
             }
-            else if (State == State.Realtime)
+            else if (State == State.Transition || State == State.Realtime)
             {
-                // Solo nos conectamos en Realtime (Live o Sim en Chart). En Strategy Analyzer se salta.
-                if (EnableGate && !IsBacktestMode())
+                // Conectar en Transition o Realtime si el Gate está habilitado y no estamos en backtest
+                if (EnableGate && !IsBacktestMode() && (tcpClient == null || !tcpClient.Connected))
                 {
                     ConnectToGate();
                 }
@@ -123,8 +125,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         /// </summary>
         public bool IsBacktestMode()
         {
-            // En Strategy Analyzer el State nunca alcanza Realtime durante la simulación de barras históricas.
-            return State != State.Realtime;
+            // En Strategy Analyzer el State nunca alcanza Transition o Realtime
+            return State != State.Realtime && State != State.Transition;
         }
         #endregion
 
