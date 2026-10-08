@@ -22,7 +22,7 @@ Asegurarse de que todos los checks críticos den `[OK]`:
 
 1. Clonar el repositorio en el VPS:
    ```cmd
-   git clone <URL_REPOSITORIO> C:\Trading\Claude-Trading
+   git clone https://github.com/mialcorf12/Claude-Trading.git C:\TradingPlatform\Claude-Trading
    cd C:\Trading\Claude-Trading
    ```
 
@@ -37,14 +37,25 @@ Asegurarse de que todos los checks críticos den `[OK]`:
    ```
    Deben reportarse todos los tests pasando exitosamente (0 errores, 0 fallos).
 
+Es correcto recibir algo como esto:
+....Timeout esperando autorizacion para req-slow en 50 ms
+Executing <Task pending name='Task-2' coro=<TestIntegrationAndFailures.test_failure_latency_timeout_denies_entry() running at C:\TradingPlatform\Claude-Trading\tests\test_integration.py:105> wait_for=<Task cancelling name='Task-8' coro=<GateClient._read_loop() running at C:\TradingPlatform\Claude-Trading\src\gate\client.py:196> wait_for=<Future cancelled created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\base_events.py:460> cb=[Task.task_wakeup()] created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\tasks.py:395> cb=[_run_until_complete_cb() at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\base_events.py:181] created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\runners.py:110> took 0.450 seconds
+..Fallo al conectar con el Gate en 127.0.0.1:9888: [WinError 1225] The remote computer refused the network connection
+Executing <Task finished name='Task-24' coro=<TestIntegrationAndFailures.test_failure_python_server_down_fail_closed() done, defined at C:\TradingPlatform\Claude-Trading\tests\test_integration.py:52> result=None created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\runners.py:110> took 0.274 seconds
+...Executing <Handle BaseProactorEventLoop._loop_self_reading() created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\windows_events.py:320> took 0.222 seconds
+........Cuenta Sim101 marcada para FLATTEN obligatorio
+Executing <Task pending name='Task-48' coro=<TestGateServer.test_dynamic_commands_broadcast() running at C:\TradingPlatform\Claude-Trading\tests\test_server.py:121> wait_for=<Future pending cb=[Task.task_wakeup()] created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\base_events.py:460> cb=[_run_until_complete_cb() at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\base_events.py:181] created at C:\Users\Administrator\AppData\Local\Programs\Python\Python314\Lib\asyncio\runners.py:110> took 0.324 seconds
+..
+----------------------------------------------------------------------
+Ran 19 tests in 10.854s
 ---
 
 ## 3. Despliegue de Estrategias en NinjaTrader 8
 
-1. Copiar las clases C# a la carpeta de NinjaTrader:
+1. Copiar las clases C# a la carpeta de NinjaTrader: (Ninjatrader cerrado)
    ```cmd
-   copy ninjatrader\Custom\Strategies\AuthorizedStrategyBase.cs "%USERPROFILE%\Documents\NinjaTrader 8\bin\Custom\Strategies\"
-   copy ninjatrader\Custom\Strategies\SampleAuthorizedNQStrategy.cs "%USERPROFILE%\Documents\NinjaTrader 8\bin\Custom\Strategies\"
+   copy ninjatrader\Custom\Strategies\AuthorizedStrategyBase.cs "C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\"
+   copy ninjatrader\Custom\Strategies\SampleAuthorizedNQStrategy.cs "C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\"
    ```
 
 2. En NinjaTrader 8:
