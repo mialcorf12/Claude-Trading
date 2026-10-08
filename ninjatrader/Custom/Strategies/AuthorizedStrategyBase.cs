@@ -103,12 +103,20 @@ namespace NinjaTrader.NinjaScript.Strategies
                 IsFillLimitOnTouch = false;
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
-                StartBehavior = StartBehavior.WaitUntilFlat;
+                StartBehavior = StartBehavior.Immediately;
                 TimeInForce = TimeInForce.Gtc;
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
                 StopTargetHandling = StopTargetHandling.PerEntryExecution;
                 BarsRequiredToTrade = 20;
+            }
+            else if (State == State.DataLoaded)
+            {
+                // Si estamos en un gráfico, conectar el socket inmediatamente sin esperar ticks de mercado
+                if (EnableGate && ChartControl != null && (tcpClient == null || !tcpClient.Connected))
+                {
+                    ConnectToGate();
+                }
             }
             else if (State == State.Transition || State == State.Realtime)
             {
