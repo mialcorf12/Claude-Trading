@@ -94,11 +94,32 @@ python -m src.gate.main --config config/lucid_rules.yaml
    - Notar que opera normalmente sin requerir socket ni bloquearse.
 
 2. **Operación en Vivo / Sim101:**
-   - Aplicar la estrategia a un gráfico de 1 minuto o 5 minutos en NT8.
-   - Habilitar `EnableGate = true`.
-   - Verificar en la ventana **Output** de NT8:
+   - Activar la estrategia en NinjaTrader 8
+   - Abrí un chart de MNQ (1 minuto) asignado a la cuenta Sim101.
+   - Hacé click derecho en el chart > Strategies > seleccioná SampleAuthorizedNQStrategy.
+   - Verificá que en el panel derecho:
+      - Enable Gate in Realtime = True
+      - Gate Host = 127.0.0.1
+      - Gate Port = 8765
+      - Enabled = True
+      - Dale a OK.
+   - Revisá la ventana Output de NinjaTrader (New > NinjaScript Output). Deberías ver:
      ```text
      [YYYY-MM-DD HH:MM:SS.FFF UTC] [ORB_NQ_SAMPLE_01] [CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
      [YYYY-MM-DD HH:MM:SS.FFF UTC] [ORB_NQ_SAMPLE_01] [RECONCILE] Información de posición enviada al Gate
      ```
    - Al generarse una señal, verificar en `logs/gate_audit.log` el registro de auditoría con la autorización concedida o denegada.
+
+Activar la estrategia en NinjaTrader 8
+Abrí un chart de MNQ (1 minuto) asignado a la cuenta Sim101.
+Hacé click derecho en el chart > Strategies > seleccioná SampleAuthorizedNQStrategy.
+Verificá que en el panel derecho:
+Enable Gate in Realtime = True
+Gate Host = 127.0.0.1
+Gate Port = 8765
+Enabled = True
+Dale a OK.
+Revisá la ventana Output de NinjaTrader (New > NinjaScript Output). Deberías ver:
+[CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
+[RECONCILE] Información de posición enviada al Gate
+Y en la terminal de Python verás el log del cliente conectado y la reconciliación procesada.
