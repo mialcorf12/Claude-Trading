@@ -21,7 +21,7 @@ class Message:
 
 
 def decode_message(line: str) -> Dict[str, Any]:
-    stripped = line.strip()
+    stripped = line.strip().lstrip("\ufeff")
     if not stripped:
         raise ProtocolError("Mensaje vacio")
     try:

@@ -149,7 +149,7 @@ class GateServer:
                 if not line_bytes:
                     break  # Conexión cerrada
 
-                line = line_bytes.decode("utf-8", errors="replace")
+                line = line_bytes.decode("utf-8-sig", errors="replace")
                 try:
                     msg = decode_message(line)
                     await self._process_message(msg, writer)

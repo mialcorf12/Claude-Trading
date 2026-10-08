@@ -346,7 +346,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 tcpClient.Connect(GateHost, GatePort);
                 networkStream = tcpClient.GetStream();
                 reader = new StreamReader(networkStream, Encoding.UTF8);
-                writer = new StreamWriter(networkStream, Encoding.UTF8) { AutoFlush = true };
+                writer = new StreamWriter(networkStream, new UTF8Encoding(false)) { AutoFlush = true };
 
                 isRunning = true;
                 lastHeartbeatUtc = DateTime.UtcNow;
