@@ -85,7 +85,11 @@ namespace NinjaTrader.NinjaScript.Strategies
         #region State Management
         protected override void OnStateChange()
         {
-            LogAudit($"[STATE] Transición a estado: {State}");
+            if (State != State.SetDefaults)
+            {
+                Print(string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff UTC}] [{1}] [STATE] Transición a estado: {2}",
+                    DateTime.UtcNow, StrategyId, State));
+            }
 
             if (State == State.SetDefaults)
             {

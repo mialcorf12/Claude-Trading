@@ -61,11 +61,14 @@ namespace NinjaTrader.NinjaScript.Strategies
                 Name = "SampleAuthorizedNQStrategy";
                 StrategyId = "ORB_NQ_SAMPLE_01";
             }
-            else if (State == State.Configure)
+            else if (State == State.DataLoaded)
             {
-                // Configurar salidas gestionadas nativamente por NinjaTrader (Criterio 6: salidas no consultan a Python)
-                SetStopLoss(CalculationMode.Ticks, (int)(StopLossPoints / TickSize));
-                SetProfitTarget(CalculationMode.Ticks, (int)(ProfitTargetPoints / TickSize));
+                // Configurar salidas gestionadas nativamente por NinjaTrader una vez cargados los datos del instrumento
+                int slTicks = TickSize > 0 ? (int)Math.Round(StopLossPoints / TickSize) : (int)(StopLossPoints * 4);
+                int tpTicks = TickSize > 0 ? (int)Math.Round(ProfitTargetPoints / TickSize) : (int)(ProfitTargetPoints * 4);
+                SetStopLoss(CalculationMode.Ticks, Math.Max(1, slTicks));
+                SetProfitTarget(CalculationMode.Ticks, Math.Max(1, tpTicks));
+                Print($"[ORB] Salidas configuradas: SL={slTicks} ticks, TP={tpTicks} ticks");
             }
         }
 
