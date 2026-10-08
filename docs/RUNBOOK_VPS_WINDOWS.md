@@ -23,7 +23,7 @@ Asegurarse de que todos los checks críticos den `[OK]`:
 1. Clonar el repositorio en el VPS:
    ```cmd
    git clone https://github.com/mialcorf12/Claude-Trading.git C:\TradingPlatform\Claude-Trading
-   cd C:\Trading\Claude-Trading
+   cd C:\TradingPlatform\Claude-Trading
    ```
 
 2. Instalar dependencias requeridas:
@@ -72,7 +72,7 @@ Para que el servidor Python arranque automáticamente al iniciar el VPS sin depe
 ### Opción A: Mediante Tarea Programada (Task Scheduler)
 Crear una tarea programada para ejecutarse al iniciar el sistema con privilegios elevados:
 ```powershell
-$Action = New-ScheduledTaskAction -Execute "python.exe" -Argument "C:\Trading\Claude-Trading\src\gate\main.py --config C:\Trading\Claude-Trading\config\lucid_rules.yaml" -WorkingDirectory "C:\Trading\Claude-Trading"
+$Action = New-ScheduledTaskAction -Execute "python.exe" -Argument "C:\TradingPlatform\Claude-Trading\src\gate\main.py --config C:\TradingPlatform\Claude-Trading\config\lucid_rules.yaml" -WorkingDirectory "C:\TradingPlatform\Claude-Trading"
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 Register-ScheduledTask -TaskName "LucidTradingGate" -Action $Action -Trigger $Trigger -Principal $Principal
@@ -80,7 +80,7 @@ Register-ScheduledTask -TaskName "LucidTradingGate" -Action $Action -Trigger $Tr
 
 ### Opción B: Ejecución manual / supervisada (Terminal)
 ```cmd
-cd C:\Trading\Claude-Trading
+cd C:\TradingPlatform\Claude-Trading
 python -m src.gate.main --config config/lucid_rules.yaml
 ```
 
