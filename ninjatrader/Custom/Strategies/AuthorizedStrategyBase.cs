@@ -210,12 +210,18 @@ namespace NinjaTrader.NinjaScript.Strategies
             // Chequeo de conexión y latido (Fail-closed)
             if (!IsGateHealthy())
             {
-                return new AuthResponseDto
+                // Intentar reconectar si la conexión con Python se cayó o se reinició
+                ConnectToGate();
+
+                if (!IsGateHealthy())
                 {
-                    Allow = false,
-                    MaxQty = 0,
-                    Reason = "FAIL_CLOSED: Socket desconectado o heartbeat vencido (> 5s)"
-                };
+                    return new AuthResponseDto
+                    {
+                        Allow = false,
+                        MaxQty = 0,
+                        Reason = "FAIL_CLOSED: Socket desconectado o heartbeat vencido (> 5s)"
+                    };
+                }
             }
 
             if (isPausedLocally || isFlattenedLocally)
@@ -344,6 +350,8 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             try
             {
+                DisconnectFromGate();
+
                 tcpClient = new TcpClient();
                 tcpClient.Connect(GateHost, GatePort);
                 networkStream = tcpClient.GetStream();
