@@ -103,7 +103,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 IsFillLimitOnTouch = false;
                 MaximumBarsLookBack = MaximumBarsLookBack.TwoHundredFiftySix;
                 OrderFillResolution = OrderFillResolution.Standard;
-                StartBehavior = StartBehavior.WaitUntilFlat;
+                StartBehavior = StartBehavior.ImmediatelySubmit;
                 TimeInForce = TimeInForce.Gtc;
                 TraceOrders = false;
                 RealtimeErrorHandling = RealtimeErrorHandling.StopCancelClose;
