@@ -200,6 +200,80 @@ class TestRiskEngine(unittest.TestCase):
         self.assertFalse(res.allow)
         self.assertEqual(res.max_qty, 15)  # 20 max - 5 actuales = 15 permitidos
 
+    def test_eval_consistency_cap_rejects_and_flattens(self):
+        # En Sim101 (25k eval, target $1.250, cap 50% = $625)
+        # Si hoy se alcanza $650, debe marcar aplanado y rechazar entradas nuevas
+        self.engine.update_telemetry(
+            TelemetryUpdate(
+                account="Sim101",
+                strategy_id="strat-1",
+                realized_pnl_today=650.0,
+                unrealized_pnl=0.0,
+            )
+        )
+        acc = self.engine.get_account_state("Sim101")
+        self.assertTrue(acc.is_flattened)
+
+        req = AuthRequest(
+            request_id="req-cap-check",
+            strategy_id="strat-1",
+            account="Sim101",
+            instrument="MNQ",
+            side="BUY",
+            qty=1,
+            stop_distance=20.0,
+        )
+        # Desmarcar temporalmente is_flattened para probar directamente el bloqueo de consistency_cap en auth
+        acc.is_flattened = False
+        res = self.engine.evaluate_authorization(req, current_time=self.rth_time)
+        self.assertFalse(res.allow)
+        self.assertIn("CONSISTENCY_CAP_REACHED", res.reason)
+
+    def test_funded_min_days_of_profit_locks_day_and_tracks_payout(self):
+        # Mapear cuenta funded de 25k (min 5 dias de $100, buffer min $25.100)
+        self.config.accounts["Funded_25K_01"] = "25k_flex_funded"
+        self.engine.register_account("Funded_25K_01", balance=25000.0)
+
+        status_init = self.engine.get_payout_status("Funded_25K_01")
+        self.assertFalse(status_init["is_payout_eligible"])
+        self.assertEqual(status_init["qualified_days_count"], 0)
+
+        # Si hoy el PnL alcanza $110 (supera los $100 minimos requeridos para el dia)
+        self.engine.update_telemetry(
+            TelemetryUpdate(
+                account="Funded_25K_01",
+                strategy_id="strat-funded-1",
+                realized_pnl_today=110.0,
+                unrealized_pnl=0.0,
+                current_balance=25110.0,
+            )
+        )
+
+        # 1. El gate debe rechazar nuevas entradas para proteger y asegurar el dia ganador
+        req = AuthRequest(
+            request_id="req-funded-day-lock",
+            strategy_id="strat-funded-1",
+            account="Funded_25K_01",
+            instrument="MNQ",
+            side="BUY",
+            qty=1,
+            stop_distance=20.0,
+        )
+        res = self.engine.evaluate_authorization(req, current_time=self.rth_time)
+        self.assertFalse(res.allow)
+        self.assertIn("FUNDED_QUALIFYING_DAY_LOCKED", res.reason)
+
+        # 2. Simular historial de 4 dias previos ganadores de $100+
+        for p in [105.0, 150.0, 120.0, 100.0]:
+            self.engine.record_closed_day("Funded_25K_01", p)
+
+        # Con 4 dias historicos + hoy ($110) = 5 dias calificados, y balance $25.110 >= $25.100
+        status_final = self.engine.get_payout_status("Funded_25K_01")
+        self.assertEqual(status_final["qualified_days_count"], 5)
+        self.assertTrue(status_final["has_min_days"])
+        self.assertTrue(status_final["has_min_balance"])
+        self.assertTrue(status_final["is_payout_eligible"])
+
 
 if __name__ == "__main__":
     unittest.main()

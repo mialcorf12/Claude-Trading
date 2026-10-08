@@ -64,6 +64,7 @@ class AccountState:
     current_positions: Dict[str, PositionState] = field(default_factory=dict)
     is_flattened: bool = False
     is_paused: bool = False
+    qualifying_days_history: List[float] = field(default_factory=list)
 
 
 class RiskEngine:
@@ -89,6 +90,52 @@ class RiskEngine:
         )
         self.accounts[account_name] = state
         return state
+
+    def record_closed_day(self, account_name: str, day_profit: float) -> bool:
+        """Registra el profit final de una jornada. Si cumple con el minimo de dia ganador en Funded, lo suma al historial."""
+        acc = self.accounts.get(account_name)
+        if not acc:
+            return False
+        
+        min_amount = acc.preset.min_profit_day_amount or 0.0
+        if acc.preset.phase == "funded" and day_profit >= min_amount and min_amount > 0:
+            acc.qualifying_days_history.append(day_profit)
+            logger.info(
+                "Cuenta %s: Dia calificado registrado ($%.2f >= $%.2f). Total calificados: %d/%d",
+                account_name, day_profit, min_amount, len(acc.qualifying_days_history), acc.preset.min_profit_days_required
+            )
+            return True
+        return False
+
+    def get_payout_status(self, account_name: str) -> Dict[str, object]:
+        """Calcula el estado de cumplimiento de los requisitos de payout para cuentas funded."""
+        acc = self.accounts.get(account_name)
+        if not acc:
+            return {"error": f"Cuenta {account_name} no registrada"}
+        
+        preset = acc.preset
+        is_today_qualifying = (
+            preset.min_profit_day_amount is not None
+            and acc.realized_pnl_today >= preset.min_profit_day_amount
+        )
+        total_qualifying = len(acc.qualifying_days_history) + (1 if is_today_qualifying else 0)
+        has_min_days = total_qualifying >= preset.min_profit_days_required
+        has_min_balance = acc.current_balance >= preset.min_account_balance
+
+        return {
+            "account": account_name,
+            "phase": preset.phase,
+            "current_balance": acc.current_balance,
+            "min_account_balance": preset.min_account_balance,
+            "realized_pnl_today": acc.realized_pnl_today,
+            "min_profit_day_amount": preset.min_profit_day_amount,
+            "qualified_days_count": total_qualifying,
+            "required_qualifying_days": preset.min_profit_days_required,
+            "is_today_qualifying": is_today_qualifying,
+            "has_min_days": has_min_days,
+            "has_min_balance": has_min_balance,
+            "is_payout_eligible": has_min_days and has_min_balance,
+        }
 
     def get_account_state(self, account_name: str) -> Optional[AccountState]:
         return self.accounts.get(account_name)
@@ -127,6 +174,20 @@ class RiskEngine:
 
         if t.realized_pnl_today is not None:
             acc.realized_pnl_today = t.realized_pnl_today
+            # Si es cuenta eval y alcanza el consistency_cap_pct, marcar aplanado obligatorio
+            if (
+                acc.preset.phase == "eval"
+                and acc.preset.consistency_cap_pct
+                and acc.preset.profit_target
+                and acc.preset.lock_day_after_consistency_cap
+            ):
+                cap = acc.preset.profit_target * acc.preset.consistency_cap_pct
+                if acc.realized_pnl_today >= cap:
+                    acc.is_flattened = True
+                    logger.warning(
+                        "Cuenta Eval %s: Profit de hoy ($%.2f) alcanzo el tope de 50%% ($%.2f). Marcando aplanado obligatorio.",
+                        acc.account_name, acc.realized_pnl_today, cap
+                    )
 
         if t.unrealized_pnl is not None:
             acc.unrealized_pnl = t.unrealized_pnl
@@ -263,15 +324,35 @@ class RiskEngine:
                 reason=f"DAILY_LOSS_LIMIT_REACHED: Perdida del dia ({abs(net_daily_pnl):.2f}) alcanzo el DLL ({preset.daily_loss_limit:.2f})",
             )
 
-        # 7. Regla de consistencia del 50% de Lucid (Criterio 9)
-        if preset.phase == "eval" and preset.consistency_cap_pct and preset.profit_target:
+        # 7a. Regla de consistencia del 50% de Lucid para Eval (Criterio 9)
+        if (
+            preset.phase == "eval"
+            and preset.consistency_cap_pct
+            and preset.profit_target
+            and preset.lock_day_after_consistency_cap
+        ):
             max_single_day_profit = preset.profit_target * preset.consistency_cap_pct
             if acc.realized_pnl_today >= max_single_day_profit:
-                logger.warning(
-                    "Cuenta %s: Profit de hoy ($%.2f) alcanzo el tope de consistencia de 50%% ($%.2f). Operar mas puede comprometer la regla.",
-                    req.account,
-                    acc.realized_pnl_today,
-                    max_single_day_profit,
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason=f"CONSISTENCY_CAP_REACHED: Profit de hoy (${acc.realized_pnl_today:.2f}) alcanzo el tope de consistencia de {int(preset.consistency_cap_pct*100)}% (${max_single_day_profit:.2f}). Entradas bloqueadas para proteger la aprobacion de la cuenta.",
+                )
+
+        # 7b. Requisito de dias de ganancia minima en cuentas Funded (min_days_of_profit)
+        if (
+            preset.phase == "funded"
+            and preset.lock_day_after_qualifying_profit
+            and preset.min_profit_day_amount
+        ):
+            if acc.realized_pnl_today >= preset.min_profit_day_amount:
+                qualified_so_far = len(acc.qualifying_days_history) + 1
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason=f"FUNDED_QUALIFYING_DAY_LOCKED: Profit de hoy (${acc.realized_pnl_today:.2f}) ya supero el minimo requerido (${preset.min_profit_day_amount:.2f}). Entradas bloqueadas para asegurar el dia calificado para payout ({qualified_so_far}/{preset.min_profit_days_required} dias).",
                 )
 
         # 8. Limite de contratos NQ / MNQ (Criterio 9)

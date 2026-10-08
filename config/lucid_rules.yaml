@@ -42,6 +42,7 @@ presets:
     max_loss_limit: 1000.0           # Trailing DD total
     drawdown_type: "EOD"             # End of Day trailing drawdown
     consistency_cap_pct: 0.50        # Ningun dia puede aportar mas del 50% del profit total
+    lock_day_after_consistency_cap: true # Bloquear nuevas entradas si hoy se alcanza el 50%
     min_account_balance: 24000.0     # Piso de liquidacion inicial
     max_contracts_mini: 2            # Maximo contratos NQ
     max_contracts_micro: 20          # Maximo contratos MNQ
@@ -58,6 +59,7 @@ presets:
     max_loss_limit: 2000.0
     drawdown_type: "EOD"
     consistency_cap_pct: 0.50
+    lock_day_after_consistency_cap: true
     min_account_balance: 48000.0
     max_contracts_mini: 4
     max_contracts_micro: 40
@@ -74,6 +76,7 @@ presets:
     max_loss_limit: 3000.0
     drawdown_type: "EOD"
     consistency_cap_pct: 0.50
+    lock_day_after_consistency_cap: true
     min_account_balance: 97000.0
     max_contracts_mini: 6
     max_contracts_micro: 60
@@ -92,6 +95,9 @@ presets:
     consistency_cap_pct: null
     min_account_balance: 25100.0     # Payout buffer minimo
     min_days_of_profit: "5 of $100"
+    min_profit_day_amount: 100.0     # Minimo $100 por dia para calificar
+    min_profit_days_required: 5      # 5 dias de ganancia requeridos
+    lock_day_after_qualifying_profit: true # Proteger el dia una vez alcanzado el objetivo
     days_to_payout: 5
     scaling_plan: true
     max_contracts_mini: 2
@@ -111,6 +117,9 @@ presets:
     consistency_cap_pct: null
     min_account_balance: 50100.0
     min_days_of_profit: "5 of $150"
+    min_profit_day_amount: 150.0
+    min_profit_days_required: 5
+    lock_day_after_qualifying_profit: true
     days_to_payout: 5
     scaling_plan: true
     max_contracts_mini: 4
@@ -130,6 +139,9 @@ presets:
     consistency_cap_pct: null
     min_account_balance: 100100.0
     min_days_of_profit: "5 of $200"
+    min_profit_day_amount: 200.0
+    min_profit_days_required: 5
+    lock_day_after_qualifying_profit: true
     days_to_payout: 5
     scaling_plan: true
     max_contracts_mini: 6

@@ -49,7 +49,11 @@ class AccountPreset:
     min_trade_duration_seconds: float = 10.0
     session_start_time_et: str = "09:30"
     session_flatten_time_et: str = "15:55"
+    lock_day_after_consistency_cap: bool = True
     min_days_of_profit: Optional[str] = None
+    min_profit_day_amount: Optional[float] = None
+    min_profit_days_required: int = 5
+    lock_day_after_qualifying_profit: bool = True
     days_to_payout: Optional[int] = None
     scaling_plan: bool = False
 
@@ -67,6 +71,14 @@ class GateConfig:
         if not preset_id:
             return None
         return self.presets.get(preset_id)
+
+
+def _parse_min_profit(val: Optional[str]) -> Optional[float]:
+    if not val:
+        return None
+    import re
+    m = re.search(r"\$(\d+)", val)
+    return float(m.group(1)) if m else None
 
 
 def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig:
@@ -126,7 +138,11 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
             min_trade_duration_seconds=float(pdata.get("min_trade_duration_seconds", 10.0)),
             session_start_time_et=pdata.get("session_start_time_et", "09:30"),
             session_flatten_time_et=pdata.get("session_flatten_time_et", "15:55"),
+            lock_day_after_consistency_cap=bool(pdata.get("lock_day_after_consistency_cap", True)),
             min_days_of_profit=pdata.get("min_days_of_profit"),
+            min_profit_day_amount=float(pdata["min_profit_day_amount"]) if pdata.get("min_profit_day_amount") is not None else _parse_min_profit(pdata.get("min_days_of_profit")),
+            min_profit_days_required=int(pdata.get("min_profit_days_required", 5)),
+            lock_day_after_qualifying_profit=bool(pdata.get("lock_day_after_qualifying_profit", True)),
             days_to_payout=int(pdata["days_to_payout"]) if pdata.get("days_to_payout") is not None else None,
             scaling_plan=bool(pdata.get("scaling_plan", False)),
         )
