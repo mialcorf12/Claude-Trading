@@ -11,6 +11,13 @@ server:
   default_fail_action: "flatten"     # "hold" | "flatten" al perder conexion o heartbeat
   audit_log_path: "logs/gate_audit.log"
 
+session:
+  mode: "24h_with_break"              # Opera 24hs continuo excepto en el break del CME
+  timezone: "America/Chicago"         # CST/CDT (Chicago - horario oficial CME)
+  daily_break_start: "15:00"          # 3:00 PM CST (16:00 ET) - Cierre diario de mantenimiento
+  daily_break_end: "16:00"            # 4:00 PM CST (17:00 ET) - Reapertura Globex
+  pre_break_buffer_minutes: 5         # Bloquear entradas 5 min antes del break (14:55 CST / 15:55 ET)
+
 instruments:
   NQ:
     type: "mini"

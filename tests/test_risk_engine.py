@@ -121,12 +121,47 @@ class TestRiskEngine(unittest.TestCase):
             qty=1,
             stop_distance=15.0,
         )
-        # 15:58 ET (posterior al flattening de 15:55)
-        late_et = datetime.now(self.tz).replace(hour=15, minute=58, second=0)
+        # 15:58 ET (14:58 CST - dentro del buffer previo al cierre de 15:00 CST)
+        # Fijar un día de semana (Miércoles)
+        late_et = datetime(2026, 10, 7, 15, 58, 0, tzinfo=self.tz)
 
         res = self.engine.evaluate_authorization(req, current_time=late_et)
         self.assertFalse(res.allow)
-        self.assertIn("OUTSIDE_TRADING_HOURS", res.reason)
+        self.assertIn("CME_DAILY_BREAK", res.reason)
+
+    def test_auth_approved_overnight_24h_session(self):
+        req = AuthRequest(
+            request_id="req-overnight",
+            strategy_id="strat-london-1",
+            account="Sim101",
+            instrument="MNQ",
+            side="BUY",
+            qty=2,
+            stop_distance=20.0,
+        )
+        # 02:30 CST (03:30 ET - sesión de Londres en plena noche)
+        cme_tz = zoneinfo.ZoneInfo("America/Chicago")
+        night_time = datetime(2026, 10, 7, 2, 30, 0, tzinfo=cme_tz)
+        res = self.engine.evaluate_authorization(req, current_time=night_time)
+        self.assertTrue(res.allow)
+        self.assertEqual(res.reason, "APPROVED")
+
+    def test_auth_approved_post_break_globex_reopen(self):
+        req = AuthRequest(
+            request_id="req-post-break",
+            strategy_id="strat-reopen-1",
+            account="Sim101",
+            instrument="MNQ",
+            side="BUY",
+            qty=2,
+            stop_distance=20.0,
+        )
+        # 16:15 CST (17:15 ET - después de la reapertura de las 16:00 CST)
+        cme_tz = zoneinfo.ZoneInfo("America/Chicago")
+        post_break_time = datetime(2026, 10, 7, 16, 15, 0, tzinfo=cme_tz)
+        res = self.engine.evaluate_authorization(req, current_time=post_break_time)
+        self.assertTrue(res.allow)
+        self.assertEqual(res.reason, "APPROVED")
 
     def test_auth_rejected_when_strategy_paused(self):
         self.engine.pause_strategy("strat-orb-1", paused=True)

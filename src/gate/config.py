@@ -16,6 +16,15 @@ class ServerConfig:
 
 
 @dataclass(frozen=True)
+class SessionConfig:
+    mode: Literal["24h_with_break", "rth_only"] = "24h_with_break"
+    timezone: str = "America/Chicago"  # CST/CDT (CME oficial)
+    daily_break_start: str = "15:00"    # 3:00 PM CST
+    daily_break_end: str = "16:00"      # 4:00 PM CST
+    pre_break_buffer_minutes: int = 5   # Bloqueo 5 min antes (14:55 CST / 15:55 ET)
+
+
+@dataclass(frozen=True)
 class InstrumentConfig:
     type: Literal["mini", "micro"]
     point_value: float
@@ -48,6 +57,7 @@ class AccountPreset:
 @dataclass
 class GateConfig:
     server: ServerConfig
+    session: SessionConfig = field(default_factory=SessionConfig)
     instruments: Dict[str, InstrumentConfig] = field(default_factory=dict)
     presets: Dict[str, AccountPreset] = field(default_factory=dict)
     accounts: Dict[str, str] = field(default_factory=dict)  # account_name -> preset_id
@@ -78,6 +88,15 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
         heartbeat_interval_seconds=int(srv_data.get("heartbeat_interval_seconds", 5)),
         default_fail_action=srv_data.get("default_fail_action", "flatten"),
         audit_log_path=srv_data.get("audit_log_path", "logs/gate_audit.log"),
+    )
+
+    sess_data = data.get("session", {})
+    session = SessionConfig(
+        mode=sess_data.get("mode", "24h_with_break"),
+        timezone=sess_data.get("timezone", "America/Chicago"),
+        daily_break_start=sess_data.get("daily_break_start", "15:00"),
+        daily_break_end=sess_data.get("daily_break_end", "16:00"),
+        pre_break_buffer_minutes=int(sess_data.get("pre_break_buffer_minutes", 5)),
     )
 
     instruments: Dict[str, InstrumentConfig] = {}
@@ -119,4 +138,4 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
         if pid not in presets:
             raise ValueError(f"Cuenta '{acc}' referencia preset desconocido '{pid}'")
 
-    return GateConfig(server=server, instruments=instruments, presets=presets, accounts=accounts)
+    return GateConfig(server=server, session=session, instruments=instruments, presets=presets, accounts=accounts)

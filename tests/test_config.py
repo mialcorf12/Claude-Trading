@@ -15,6 +15,9 @@ class TestGateConfig(unittest.TestCase):
         self.assertEqual(config.server.port, 8765)
         self.assertEqual(config.server.timeout_ms, 200)
         self.assertEqual(config.server.heartbeat_interval_seconds, 5)
+        self.assertEqual(config.session.mode, "24h_with_break")
+        self.assertEqual(config.session.daily_break_start, "15:00")
+        self.assertEqual(config.session.daily_break_end, "16:00")
 
     def test_instruments_nq_mnq(self):
         config = load_config(self.config_path)

@@ -3,7 +3,7 @@ Evalua cada solicitud de orden contra las reglas de la cuenta (EOD Trailing DD, 
 limite de contratos, consistencia, horarios y stop obligatorio).
 """
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 import logging
 from typing import Dict, List, Optional
 import zoneinfo
@@ -72,6 +72,7 @@ class RiskEngine:
         self.accounts: Dict[str, AccountState] = {}
         self.strategy_paused: Dict[str, bool] = {}
         self.ny_tz = zoneinfo.ZoneInfo("America/New_York")
+        self.cme_tz = zoneinfo.ZoneInfo(config.session.timezone)
 
     def register_account(self, account_name: str, balance: Optional[float] = None) -> AccountState:
         preset = self.config.get_preset_for_account(account_name)
@@ -179,19 +180,63 @@ class RiskEngine:
                 reason=f"ACCOUNT_PAUSED_OR_FLATTENED: La cuenta '{req.account}' esta pausada o en flatten",
             )
 
-        # 4. Horarios de sesión y aplanado obligatorio (15:55 ET) (Criterio 9)
-        now_et = current_time if current_time is not None else datetime.now(self.ny_tz)
-        t_now = now_et.time()
-        start_t = time.fromisoformat(preset.session_start_time_et)
-        flatten_t = time.fromisoformat(preset.session_flatten_time_et)
+        # 4. Horarios de sesión: Operación 24hs con corte diario de liquidación/mantenimiento CME (3:00 - 4:00 PM CST)
+        now_cme = current_time.astimezone(self.cme_tz) if current_time is not None else datetime.now(self.cme_tz)
+        session_cfg = self.config.session
 
-        if not (start_t <= t_now < flatten_t):
-            return AuthResponse(
-                request_id=req.request_id,
-                allow=False,
-                max_qty=0,
-                reason=f"OUTSIDE_TRADING_HOURS: Hora actual {t_now.strftime('%H:%M')} fuera del rango permitido ({preset.session_start_time_et} - {preset.session_flatten_time_et} ET)",
-            )
+        if session_cfg.mode == "24h_with_break":
+            weekday = now_cme.weekday()  # 0=Lunes, 4=Viernes, 5=Sábado, 6=Domingo
+            t_cme = now_cme.time()
+            break_start = time.fromisoformat(session_cfg.daily_break_start)
+            break_end = time.fromisoformat(session_cfg.daily_break_end)
+
+            # Buffer de pre-cierre (ej. 5 min antes: 14:55 CST / 15:55 ET)
+            dummy_dt = datetime(2026, 1, 1, break_start.hour, break_start.minute, break_start.second)
+            buffered_start = (dummy_dt - timedelta(minutes=session_cfg.pre_break_buffer_minutes)).time()
+
+            # Fin de semana (Viernes post-corte 15:00 CST hasta Domingo reapertura 17:00 CST)
+            if weekday == 4 and t_cme >= buffered_start:
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason=f"WEEKEND_CLOSED: Mercado CME cerrado por fin de semana desde Viernes {buffered_start.strftime('%H:%M')} CST",
+                )
+            if weekday == 5:
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason="WEEKEND_CLOSED: Mercado CME cerrado los sabados",
+                )
+            if weekday == 6 and t_cme < time(17, 0):
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason="WEEKEND_CLOSED: Mercado CME reabre Domingos a las 17:00 CST (18:00 ET)",
+                )
+
+            # Lunes a Jueves: Break diario de liquidación y mantenimiento (15:00 a 16:00 CST)
+            if buffered_start <= t_cme < break_end:
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason=f"CME_DAILY_BREAK: Mercado en break diario de liquidacion/mantenimiento ({buffered_start.strftime('%H:%M')} - {break_end.strftime('%H:%M')} CST). Reapertura Globex a las {break_end.strftime('%H:%M')} CST.",
+                )
+        else:
+            # Modo RTH tradicional
+            t_now = now_cme.time()
+            start_t = time.fromisoformat(preset.session_start_time_et)
+            flatten_t = time.fromisoformat(preset.session_flatten_time_et)
+            if not (start_t <= t_now < flatten_t):
+                return AuthResponse(
+                    request_id=req.request_id,
+                    allow=False,
+                    max_qty=0,
+                    reason=f"OUTSIDE_TRADING_HOURS: Hora actual {t_now.strftime('%H:%M')} fuera del rango permitido ({preset.session_start_time_et} - {preset.session_flatten_time_et} ET)",
+                )
 
         # 5. Drawdown EOD y piso de liquidación (Criterio 9)
         current_equity = acc.current_balance + acc.unrealized_pnl
