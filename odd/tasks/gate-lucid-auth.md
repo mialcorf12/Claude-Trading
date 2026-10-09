@@ -86,6 +86,21 @@ Origen: aclaraciones del usuario (operador en Costa Rica, UTC-6 fijo; Chicago us
   - **Verificación:** 107 tests OK (`tests/test_dashboard_data.py`, `tests/test_dashboard_server.py`) + prueba real en Chrome headless con datos generados por el motor. La revisión visual encontró y corrigió 2 bugs de la UI que los tests de Python no ven (KPI "Motivos de rechazo" mostraba `[object HTMLDivElement]`; los desplegables de filtro no se poblaban). Sin tests automáticos de JS.
   - **Seguridad:** solo GET, lista blanca de rutas, validación de filtros, CSP `default-src 'self'`, textos dinámicos solo vía `textContent` (probado con `<img onerror>` en `strategy_id`).
 
+## Flatten, consistencia y arranque desde la web (2026-10-09)
+
+- [x] **TASK-11 (commit 1): Flatten automático antes del break + consistencia de Eval contra profit acumulado**
+  - **Ruta:** Inline (mismo contexto ya mapeado).
+  - **Archivos:** `src/gate/rules.py`, `src/gate/config.py`, `src/gate/risk_engine.py`, `src/gate/server.py`, `config/lucid_rules.yaml`, `ninjatrader/Custom/Strategies/AuthorizedStrategyBase.cs`, `src/dashboard/data.py`, tests, runbook
+  - **Descripción:** (a) El gate emite `COMMAND FLATTEN` por cuenta desde `session.flatten_before_break_minutes` antes del break, con reintentos; también al alcanzar el tope de consistencia (hoy solo marcaba el flag). NT8 ejecuta el flatten en el hilo de la estrategia y solo si la cuenta coincide. (b) Tope diario de Eval = `max(c × profit_target, c/(1-c) × profit_acumulado_previo)`.
+  - **Cambios derivados (C#):** el FLATTEN se ejecuta con `TriggerCustomEvent` (documentación NT8: no enviar órdenes desde otro hilo), solo si la cuenta coincide, y se eliminó `isFlattenedLocally` (nunca se limpiaba; Python decide las entradas).
+  - **Verificación:** 127 tests OK (RED previo: 12 errores + 1 fallo). C# sin compilar en este entorno: requiere F5 en NT8.
+
+- [ ] **TASK-12 (commit 2): Botón "Arrancar gate" en el dashboard**
+  - **Ruta:** Inline.
+  - **Archivos:** `src/dashboard/launcher.py`, `src/dashboard/server.py`, `src/dashboard/main.py`, `src/dashboard/data.py`, `src/dashboard/static/*`, tests, runbook
+  - **Descripción:** `POST /api/gate/start` lanza el gate como proceso independiente (log en `logs/gate_console.log`). Protección CSRF/DNS-rebinding: token por proceso + validación de Host/Origin; solo habilitado en loopback. Estado "en línea" = puerto del gate ocupado (no depende del log).
+  - **Verificación:** tests del launcher (inyectables) y del endpoint HTTP; prueba real arrancando el gate desde la API.
+
 ## Verificación y Cierre
 - Cobertura de pruebas unitarias e integración en Python.
 - Verificación de contratos y estados fail-closed.

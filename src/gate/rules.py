@@ -17,6 +17,19 @@ def liquidation_floor(preset: AccountPreset, eod_hwm: float) -> float:
     return max(preset.min_account_balance, trailing_floor)
 
 
+def eval_daily_profit_cap(preset: AccountPreset, accumulated_profit: float) -> Optional[float]:
+    """Tope de profit del dia en Eval para no violar la consistencia (mejor dia <= c x profit total).
+
+    Si hoy es el mejor dia y gana x, su peso es x / (acumulado + x) <= c  =>  x <= c/(1-c) x acumulado.
+    Con acumulado 0 esa formula daria 0 y bloquearia el primer dia, asi que se usa como piso el tope seguro
+    c x profit_target: ningun dia por encima de c x target garantiza <= c del total al alcanzar el target.
+    """
+    c = preset.consistency_cap_pct
+    if preset.phase != "eval" or not c or not (0 < c < 1) or not preset.profit_target:
+        return None
+    return max(c * preset.profit_target, c / (1 - c) * max(0.0, accumulated_profit))
+
+
 def trading_day_for(moment: datetime, tz: tzinfo, rollover: time) -> date:
     """Fecha en la que cierra el dia de trading que contiene `moment` (corte `rollover` en la zona `tz`)."""
     local = moment.astimezone(tz)

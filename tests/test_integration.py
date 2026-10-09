@@ -42,7 +42,7 @@ class TestIntegrationAndFailures(unittest.IsolatedAsyncioTestCase):
             req, current_time=datetime(2026, 10, 7, 10, 30, tzinfo=cme_tz)
         )
 
-        self.server = GateServer(self.config, risk_engine=self.risk_engine)
+        self.server = GateServer(self.config, risk_engine=self.risk_engine, flatten_check_seconds=None)
 
     async def asyncTearDown(self):
         if self.server._running:

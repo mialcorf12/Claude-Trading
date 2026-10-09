@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import zoneinfo
 
 from src.gate.config import GateConfig, AccountPreset
-from src.gate.rules import liquidation_floor, payout_progress, trading_day_for
+from src.gate.rules import eval_daily_profit_cap, liquidation_floor, payout_progress, trading_day_for
 from src.gate.state_store import StateStore
 
 logger = logging.getLogger("gate.risk_engine")
@@ -82,6 +82,8 @@ class RiskEngine:
         self.cme_tz = zoneinfo.ZoneInfo(config.session.timezone)
         self.store = state_store
         self._persisted: Dict[str, Any] = state_store.load() if state_store else {}
+        self._flatten_queue: Dict[str, str] = {}              # cuenta -> motivo (pedidos puntuales, ej. consistencia)
+        self._last_flatten_sent: Dict[str, datetime] = {}     # ultimo FLATTEN pre-break enviado por cuenta
 
     def register_account(self, account_name: str, balance: Optional[float] = None) -> AccountState:
         preset = self.config.get_preset_for_account(account_name)
@@ -312,21 +314,56 @@ class RiskEngine:
 
     def _enforce_consistency_cap(self, acc: AccountState) -> None:
         """Eval: si el profit de hoy alcanza consistency_cap_pct del target, marca aplanado obligatorio."""
-        preset = acc.preset
-        if not (
-            preset.phase == "eval"
-            and preset.consistency_cap_pct
-            and preset.profit_target
-            and preset.lock_day_after_consistency_cap
-        ):
+        cap = self._consistency_cap(acc)
+        if cap is None or acc.realized_pnl_today < cap or acc.is_flattened:
             return
-        cap = preset.profit_target * preset.consistency_cap_pct
-        if acc.realized_pnl_today >= cap:
-            acc.is_flattened = True
-            logger.warning(
-                "Cuenta Eval %s: Profit de hoy ($%.2f) alcanzo el tope de 50%% ($%.2f). Marcando aplanado obligatorio.",
-                acc.account_name, acc.realized_pnl_today, cap,
-            )
+        acc.is_flattened = True
+        self._flatten_queue[acc.account_name] = "CONSISTENCY_CAP"
+        logger.warning(
+            "Cuenta Eval %s: Profit de hoy ($%.2f) alcanzo el tope de consistencia ($%.2f). Bloqueo del dia y FLATTEN.",
+            acc.account_name, acc.realized_pnl_today, cap,
+        )
+
+    @staticmethod
+    def _consistency_cap(acc: AccountState) -> Optional[float]:
+        """Tope de profit de HOY en Eval, contra el profit acumulado al inicio del dia (None si no aplica)."""
+        preset = acc.preset
+        if not preset.lock_day_after_consistency_cap:
+            return None
+        return eval_daily_profit_cap(preset, acc.day_start_balance - preset.initial_balance)
+
+    # ------------------------------------------------------------------
+    # FLATTEN automatico
+    # ------------------------------------------------------------------
+    def _in_pre_break_flatten_window(self, now: datetime) -> bool:
+        session = self.config.session
+        if session.mode != "24h_with_break":
+            return False
+        local = now.astimezone(self.cme_tz)
+        if local.weekday() > 4:  # sabado/domingo: mercado cerrado
+            return False
+        break_start = time.fromisoformat(session.daily_break_start)
+        anchor = datetime(2026, 1, 1, break_start.hour, break_start.minute, break_start.second)
+        window_start = (anchor - timedelta(minutes=session.flatten_before_break_minutes)).time()
+        return window_start <= local.time() < break_start
+
+    def collect_flatten_requests(self, now: Optional[datetime] = None) -> List[Tuple[str, str]]:
+        """FLATTEN pendientes como [(cuenta, motivo)]: pedidos puntuales (consistencia) + ventana previa al break.
+
+        El FLATTEN es idempotente en NT8 (solo actua si hay posicion), por eso en la ventana se reenvia cada
+        flatten_retry_seconds sin necesitar conocer las posiciones abiertas.
+        """
+        now = now or datetime.now(self.cme_tz)
+        requests: List[Tuple[str, str]] = list(self._flatten_queue.items())
+        self._flatten_queue.clear()
+        if self._in_pre_break_flatten_window(now):
+            retry = timedelta(seconds=self.config.session.flatten_retry_seconds)
+            for name in self.accounts:
+                last = self._last_flatten_sent.get(name)
+                if last is None or now - last >= retry:
+                    self._last_flatten_sent[name] = now
+                    requests.append((name, "PRE_BREAK"))
+        return requests
 
     def update_telemetry(self, t: TelemetryUpdate, now: Optional[datetime] = None) -> None:
         acc = self.accounts.get(t.account)
@@ -490,20 +527,19 @@ class RiskEngine:
             )
 
         # 7a. Regla de consistencia del 50% de Lucid para Eval (Criterio 9)
-        if (
-            preset.phase == "eval"
-            and preset.consistency_cap_pct
-            and preset.profit_target
-            and preset.lock_day_after_consistency_cap
-        ):
-            max_single_day_profit = preset.profit_target * preset.consistency_cap_pct
-            if acc.realized_pnl_today >= max_single_day_profit:
-                return AuthResponse(
-                    request_id=req.request_id,
-                    allow=False,
-                    max_qty=0,
-                    reason=f"CONSISTENCY_CAP_REACHED: Profit de hoy (${acc.realized_pnl_today:.2f}) alcanzo el tope de consistencia de {int(preset.consistency_cap_pct*100)}% (${max_single_day_profit:.2f}). Entradas bloqueadas para proteger la aprobacion de la cuenta.",
-                )
+        consistency_cap = self._consistency_cap(acc)
+        if consistency_cap is not None and acc.realized_pnl_today >= consistency_cap:
+            return AuthResponse(
+                request_id=req.request_id,
+                allow=False,
+                max_qty=0,
+                reason=(
+                    f"CONSISTENCY_CAP_REACHED: Profit de hoy (${acc.realized_pnl_today:.2f}) alcanzo el tope de "
+                    f"consistencia del dia (${consistency_cap:.2f}, {int(preset.consistency_cap_pct * 100)}% del profit "
+                    f"acumulado, con piso de {int(preset.consistency_cap_pct * 100)}% del target). "
+                    f"Entradas bloqueadas para proteger la aprobacion de la cuenta."
+                ),
+            )
 
         # 7b. Funded: objetivo = llegar a balance_for_payout lo antes posible; NO se bloquea el dia mientras
         # no se alcance. Una vez alcanzado, los dias restantes necesitan solo min_profit_day_amount: al

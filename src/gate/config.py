@@ -31,6 +31,8 @@ class SessionConfig:
     daily_break_end: str = "17:00"      # 17:00 CT = 18:00 ET: reapertura Globex
     pre_break_buffer_minutes: int = 5   # Bloqueo de entradas 5 min antes (15:55 CT)
     trading_day_rollover: str = "16:00" # Corte del dia de trading / EOD: 16:00 CT = 17:00 ET (hora de Chicago)
+    flatten_before_break_minutes: int = 5  # Ventana de FLATTEN automatico previa al break (15:55-16:00 CT)
+    flatten_retry_seconds: int = 30        # Reenvio del FLATTEN dentro de la ventana (es idempotente en NT8)
 
 
 @dataclass(frozen=True)
@@ -137,6 +139,8 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
         daily_break_end=sess_data.get("daily_break_end", "17:00"),
         pre_break_buffer_minutes=int(sess_data.get("pre_break_buffer_minutes", 5)),
         trading_day_rollover=sess_data.get("trading_day_rollover", "16:00"),
+        flatten_before_break_minutes=int(sess_data.get("flatten_before_break_minutes", 5)),
+        flatten_retry_seconds=int(sess_data.get("flatten_retry_seconds", 30)),
     )
 
     instruments: Dict[str, InstrumentConfig] = {}

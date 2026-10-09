@@ -36,7 +36,7 @@ class TestGateServer(unittest.IsolatedAsyncioTestCase):
         self.risk_engine = RiskEngine(self.config)
         self.risk_engine.register_account("Sim101", balance=25000.0)
 
-        self.server = GateServer(self.config, risk_engine=self.risk_engine)
+        self.server = GateServer(self.config, risk_engine=self.risk_engine, flatten_check_seconds=None)
         await self.server.start()
 
     async def asyncTearDown(self):

@@ -49,11 +49,14 @@ class GateServer:
         config: GateConfig,
         risk_engine: Optional[RiskEngine] = None,
         trading_day_tick_seconds: float = 30.0,
+        flatten_check_seconds: Optional[float] = 5.0,
     ):
         self.config = config
         self.risk_engine = risk_engine or RiskEngine(config, StateStore(config.server.state_path))
         self.trading_day_tick_seconds = trading_day_tick_seconds
         self._trading_day_task: Optional[asyncio.Task] = None
+        self.flatten_check_seconds = flatten_check_seconds  # None desactiva el chequeo periodico de FLATTEN
+        self._flatten_task: Optional[asyncio.Task] = None
         self.log_tz = zoneinfo.ZoneInfo(config.server.log_timezone)
         self.audit = AuditLogger(config.server.audit_log_path, self.log_tz)
         self.server: Optional[asyncio.Server] = None
@@ -76,6 +79,8 @@ class GateServer:
         # Iniciar latido de corazon periodico
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         self._trading_day_task = asyncio.create_task(self._trading_day_loop())
+        if self.flatten_check_seconds is not None:
+            self._flatten_task = asyncio.create_task(self._flatten_loop())
 
     async def stop(self) -> None:
         self._running = False
@@ -86,12 +91,13 @@ class GateServer:
             except asyncio.CancelledError:
                 pass
 
-        if self._trading_day_task:
-            self._trading_day_task.cancel()
-            try:
-                await self._trading_day_task
-            except asyncio.CancelledError:
-                pass
+        for task in (self._trading_day_task, self._flatten_task):
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         for task in list(self.client_tasks):
             task.cancel()
@@ -145,6 +151,23 @@ class GateServer:
             except Exception as exc:  # un fallo del cierre no debe tumbar el gate
                 logger.error("Error cerrando el dia de trading: %s", exc)
                 await asyncio.sleep(self.trading_day_tick_seconds)
+
+    async def _dispatch_flattens(self) -> None:
+        """Envia a NT8 los FLATTEN pendientes (ventana previa al break y tope de consistencia)."""
+        for account, reason in self.risk_engine.collect_flatten_requests():
+            logger.warning("FLATTEN %s (%s)", account, reason)
+            await self.broadcast_command("FLATTEN", account=account, reason=reason)
+
+    async def _flatten_loop(self) -> None:
+        while self._running:
+            try:
+                await self._dispatch_flattens()
+                await asyncio.sleep(self.flatten_check_seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # un fallo aqui no debe tumbar el gate
+                logger.error("Error en el chequeo de FLATTEN: %s", exc)
+                await asyncio.sleep(self.flatten_check_seconds)
 
     async def broadcast_command(self, action: str, **kwargs) -> None:
         """Envia comandos dinamicos hacia NT8 (e.g. PAUSE, FLATTEN)."""
@@ -258,6 +281,7 @@ class GateServer:
                 positions=positions if raw_pos else None,
             )
             self.risk_engine.update_telemetry(t)
+            await self._dispatch_flattens()  # ej. tope de consistencia: flatten inmediato, sin esperar al chequeo periodico
 
         elif msg_type == "RECONCILE":
             self.audit.log_event("RECONCILE_RECEIVED", msg)

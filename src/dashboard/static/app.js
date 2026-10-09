@@ -119,7 +119,7 @@ function renderAccount(a) {
     const e = a.eval;
     card.append(meter("Progreso al profit target", money(e.profit, 0) + " de " + money(e.profit_target, 0), e.profit_target ? e.profit / e.profit_target : 0, ""));
     if (e.consistency_cap) card.append(h("div", { class: "note" },
-      "Consistencia: hoy " + money(a.pnl_today, 0) + " de un tope de " + money(e.consistency_cap, 0) + " (" + pct(e.consistency_pct) + " del target). " +
+      "Consistencia: hoy " + money(a.pnl_today, 0) + " de un tope de " + money(e.consistency_cap, 0) + " (" + pct(e.consistency_pct) + " del profit acumulado, con piso del " + pct(e.consistency_pct) + " del target). " +
       "Mejor día / profit total: " + pct(e.best_day_share) + " (informativo)."));
   }
   if (a.payout) {

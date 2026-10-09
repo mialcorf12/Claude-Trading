@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import zoneinfo
 
 from src.gate.config import AccountPreset, GateConfig
-from src.gate.rules import liquidation_floor, payout_progress, trading_day_for
+from src.gate.rules import eval_daily_profit_cap, liquidation_floor, payout_progress, trading_day_for
 
 DEFAULT_MAX_LOG_BYTES = 20 * 1024 * 1024
 MAX_ROWS = 300  # filas maximas de decisiones/eventos devueltas al navegador (las mas recientes)
@@ -147,7 +147,8 @@ def _event_detail(event: str, data: Dict[str, Any]) -> str:
         return f"{len(data.get('positions', []))} posiciones abiertas"
     if event == "COMMAND_BROADCAST":
         target = data.get("account") or data.get("strategy_id") or ""
-        return f"{data.get('action', '')} {target}".strip()
+        reason = f" ({data['reason']})" if data.get("reason") else ""
+        return f"{data.get('action', '')} {target}{reason}".strip()
     if event == "TRADING_DAY_CLOSED":
         return f"dia {data.get('day', '')} cerrado"
     if event in ("CLIENT_CONNECTED", "CLIENT_DISCONNECTED"):
@@ -251,8 +252,8 @@ def account_metrics(name: str, saved: Dict[str, Any], preset: Optional[AccountPr
         metrics["eval"] = {
             "profit": profit,
             "profit_target": preset.profit_target,
-            "consistency_cap": (preset.profit_target * preset.consistency_cap_pct)
-            if preset.profit_target and preset.consistency_cap_pct else None,
+            # Tope de HOY contra el profit acumulado al inicio del dia (mismo calculo que el gate)
+            "consistency_cap": eval_daily_profit_cap(preset, _num(saved.get("day_start_balance")) - preset.initial_balance),
             "consistency_pct": preset.consistency_cap_pct,
             # Informativo: Lucid evalua el mejor dia contra el profit total acumulado
             "best_day": best_day,

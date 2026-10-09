@@ -52,7 +52,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             new ConcurrentDictionary<string, TaskCompletionSource<AuthResponseDto>>();
 
         private volatile bool isPausedLocally = false;
-        private volatile bool isFlattenedLocally = false;
+        // El FLATTEN no deja ningún flag local: Python decide las entradas (acc.is_flattened / break del CME) y lo
+        // reinicia al cerrar el día; un flag local nunca se limpiaría y bloquearía la estrategia hasta reiniciarla.
         #endregion
 
         #region Properties exposed to NinjaScript UI
@@ -224,13 +225,13 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
             }
 
-            if (isPausedLocally || isFlattenedLocally)
+            if (isPausedLocally)
             {
                 return new AuthResponseDto
                 {
                     Allow = false,
                     MaxQty = 0,
-                    Reason = "FAIL_CLOSED: Estrategia en PAUSE o cuenta en FLATTEN"
+                    Reason = "FAIL_CLOSED: Estrategia en PAUSE"
                 };
             }
 
@@ -507,14 +508,33 @@ namespace NinjaTrader.NinjaScript.Strategies
                 }
                 else if (action == "FLATTEN")
                 {
-                    isFlattenedLocally = true;
-                    LogAudit($"[COMMAND] FLATTEN recibido de Python para cuenta {Account?.Name}. Aplanando posiciones...");
-                    if (Position != null && Position.MarketPosition == MarketPosition.Long)
-                        ExitLong();
-                    else if (Position != null && Position.MarketPosition == MarketPosition.Short)
-                        ExitShort();
+                    // El comando trae la cuenta; si no coincide con la de esta estrategia se ignora
+                    string targetAccount = ExtractJsonString(line, "account");
+                    if (!string.IsNullOrEmpty(targetAccount) && Account != null && targetAccount != Account.Name)
+                        return;
+
+                    string reason = ExtractJsonString(line, "reason");
+                    LogAudit($"[COMMAND] FLATTEN recibido de Python para la cuenta {Account?.Name} ({reason}).");
+                    // Este código corre en el hilo del socket: las órdenes deben enviarse en el hilo de la estrategia
+                    TriggerCustomEvent(FlattenNow, null);
                 }
             }
+        }
+
+        /// <summary>
+        /// Cierra la posición de esta estrategia. Idempotente: si ya está plana no hace nada (Python reenvía el
+        /// FLATTEN durante toda la ventana previa al break). Se invoca vía TriggerCustomEvent.
+        /// </summary>
+        private void FlattenNow(object state)
+        {
+            if (Position == null || Position.MarketPosition == MarketPosition.Flat)
+                return;
+
+            LogAudit("[FLATTEN] Cerrando posición por orden de Python.");
+            if (Position.MarketPosition == MarketPosition.Long)
+                ExitLong();
+            else if (Position.MarketPosition == MarketPosition.Short)
+                ExitShort();
         }
 
         #region Minimal JSON String Parsing Helpers

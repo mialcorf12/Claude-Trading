@@ -22,6 +22,8 @@ session:
   daily_break_end: "17:00"            # 17:00 CT = 18:00 ET: reapertura Globex (diaria y domingo)
   pre_break_buffer_minutes: 5         # Bloquear entradas 5 min antes del break (15:55 CT)
   trading_day_rollover: "16:00"       # Corte del dia de trading y del EOD: 16:00 CT = 17:00 ET (liquidacion CME)
+  flatten_before_break_minutes: 5     # Desde 15:55 CT el gate ordena FLATTEN a NT8 (solo modo 24h_with_break)
+  flatten_retry_seconds: 30           # Mientras dure la ventana, reenvia el FLATTEN cada 30 s (idempotente)
 
 instruments:
   NQ:

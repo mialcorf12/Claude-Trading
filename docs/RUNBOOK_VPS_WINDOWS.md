@@ -168,3 +168,13 @@ Abre **http://127.0.0.1:8780** en el navegador del VPS (por RDP). Opciones: `--p
 - **Limite:** solo ve lo que Python registro. Los rechazos locales de NT8 (timeout, socket caido) quedan en la ventana Output de NinjaTrader.
 - **Seguridad:** no tiene autenticacion. Por defecto escucha solo en `127.0.0.1`; si usas `--host 0.0.0.0`, restringelo por firewall/VPN.
 - **Arranque automatico (opcional):** crea una segunda tarea programada igual a la del gate (seccion 4) con el argumento `-m src.dashboard.main --config config/lucid_rules.yaml`.
+
+---
+
+## 9. Flatten automatico y consistencia de Eval
+
+- **Flatten antes del break:** de lunes a viernes, desde `session.flatten_before_break_minutes` (5 min: **15:55 CT**) hasta las 16:00 CT, el gate envia `FLATTEN` a NT8 para cada cuenta cada `flatten_retry_seconds` (30 s). NT8 solo actua si la estrategia tiene posicion, por eso el reenvio es seguro. Aplica en `session.mode: "24h_with_break"`. En reloj de Costa Rica: 14:55 en verano, 15:55 en invierno.
+- **Entradas:** siguen bloqueadas desde 15:55 CT hasta la reapertura de las 17:00 CT (regla `CME_DAILY_BREAK`).
+- **NT8:** el FLATTEN solo lo ejecuta la estrategia cuya cuenta coincide, y se envia al hilo de la estrategia (`TriggerCustomEvent`). Requiere recompilar con F5.
+- **Consistencia de Eval:** el tope diario es `max(c x profit_target, c/(1-c) x profit_acumulado_al_inicio_del_dia)`. Con c = 50%: el primer dia el tope es 50% del target (25K: $625); despues sube hasta igualar lo acumulado (con $900 acumulados, hasta $900). Al alcanzarlo el gate **bloquea las entradas del dia y manda FLATTEN** (`reason: CONSISTENCY_CAP`); se libera al cerrar el dia (16:00 CT).
+- El piso del 50% del target evita bloquear el primer dia (con 0 acumulado, "50% del acumulado" seria 0). Es conservador: nunca permite romper la consistencia al alcanzar el target.
