@@ -67,11 +67,11 @@ class TestGateServer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(acc.current_positions["MNQ"].qty, 2)
 
         # 2. Enviar AUTH_REQUEST
-        # Forzar hora de RTH en el motor para evitar outside trading hours
-        ny_tz = zoneinfo.ZoneInfo("America/New_York")
+        # Fijar un miercoles 10:30 hora de Chicago (determinista, independiente del reloj real)
+        cme_tz = zoneinfo.ZoneInfo("America/Chicago")
         self.risk_engine.evaluate_authorization_orig = self.risk_engine.evaluate_authorization
         self.risk_engine.evaluate_authorization = lambda req: self.risk_engine.evaluate_authorization_orig(
-            req, current_time=datetime.now(ny_tz).replace(hour=10, minute=30, second=0)
+            req, current_time=datetime(2026, 10, 7, 10, 30, tzinfo=cme_tz)
         )
 
         auth_req = {
@@ -103,6 +103,16 @@ class TestGateServer(unittest.IsolatedAsyncioTestCase):
             msg = decode_message(line.decode())
             if msg.get("type") != "HEARTBEAT":
                 return msg
+
+    async def test_audit_log_timestamps_use_configured_timezone_not_utc(self):
+        audit_path = Path(self.config.server.audit_log_path)
+        first_record = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
+
+        self.assertNotIn("timestamp_utc", first_record)
+        stamp = datetime.fromisoformat(first_record["timestamp"])
+        chicago = zoneinfo.ZoneInfo(self.config.server.log_timezone)
+        self.assertEqual(stamp.utcoffset(), stamp.astimezone(chicago).utcoffset())
+        self.assertNotEqual(stamp.utcoffset().total_seconds(), 0)  # Chicago nunca es UTC+0
 
     async def test_dynamic_commands_broadcast(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", 9876)

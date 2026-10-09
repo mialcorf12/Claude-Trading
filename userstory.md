@@ -37,7 +37,7 @@ para que el código probado en backtesting sea exactamente el que opera en vivo.
     estrategia; Python recalcula drawdown y high-water mark.
 11. **Reconciliación:** al reiniciar o reconectar, NT8 envía posiciones y órdenes
     reales antes de solicitar autorizaciones.
-12. **Auditoría:** cada solicitud, respuesta y evento queda en log con timestamp UTC.
+12. **Auditoría:** cada solicitud, respuesta y evento queda en log con timestamp en hora de Chicago (CST/CDT, configurable en `server.log_timezone`).
 
 ### Fuera de alcance
 - Exportar resultados de Strategy Analyzer a Python (historia aparte).

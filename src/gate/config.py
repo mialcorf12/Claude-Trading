@@ -1,8 +1,14 @@
-"""Cargador y validación de configuración declarativa para Lucid Trading."""
+"""Cargador y validación de configuración declarativa para Lucid Trading.
+
+Todas las horas de las reglas se expresan en la hora oficial del CME (America/Chicago, CT).
+"""
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Literal
 import yaml
+
+logger = logging.getLogger("gate.config")
 
 
 @dataclass(frozen=True)
@@ -13,15 +19,16 @@ class ServerConfig:
     heartbeat_interval_seconds: int = 5
     default_fail_action: Literal["hold", "flatten"] = "flatten"
     audit_log_path: str = "logs/gate_audit.log"
+    log_timezone: str = "America/Chicago"  # Zona horaria de logs y timestamps (reemplaza UTC)
 
 
 @dataclass(frozen=True)
 class SessionConfig:
     mode: Literal["24h_with_break", "rth_only"] = "24h_with_break"
-    timezone: str = "America/Chicago"  # CST/CDT (CME oficial)
-    daily_break_start: str = "15:00"    # 3:00 PM CST
-    daily_break_end: str = "16:00"      # 4:00 PM CST
-    pre_break_buffer_minutes: int = 5   # Bloqueo 5 min antes (14:55 CST / 15:55 ET)
+    timezone: str = "America/Chicago"   # Hora oficial CME (CST invierno / CDT verano)
+    daily_break_start: str = "16:00"    # 16:00 CT = 17:00 ET: inicio del break de mantenimiento
+    daily_break_end: str = "17:00"      # 17:00 CT = 18:00 ET: reapertura Globex
+    pre_break_buffer_minutes: int = 5   # Bloqueo de entradas 5 min antes (15:55 CT)
 
 
 @dataclass(frozen=True)
@@ -43,12 +50,14 @@ class AccountPreset:
     max_loss_limit: float
     drawdown_type: Literal["EOD", "intraday"]
     consistency_cap_pct: Optional[float]
+    # Eval: balance inicial del piso de liquidacion.
+    # Funded: balance minimo bajo el cual se pierde la cuenta (tope del trailing drawdown).
     min_account_balance: float
     max_contracts_mini: int
     max_contracts_micro: int
     min_trade_duration_seconds: float = 10.0
-    session_start_time_et: str = "09:30"
-    session_flatten_time_et: str = "15:55"
+    session_start_time: str = "08:30"    # Hora de Chicago (solo modo rth_only)
+    session_flatten_time: str = "14:55"  # Hora de Chicago (solo modo rth_only)
     lock_day_after_consistency_cap: bool = True
     min_days_of_profit: Optional[str] = None
     min_profit_day_amount: Optional[float] = None
@@ -56,6 +65,15 @@ class AccountPreset:
     lock_day_after_qualifying_profit: bool = True
     days_to_payout: Optional[int] = None
     scaling_plan: bool = False
+    # Solo Funded: balance_for_payout = initial_balance + buffer + payout
+    buffer: Optional[float] = None
+    payout: Optional[float] = None
+
+    @property
+    def balance_for_payout(self) -> Optional[float]:
+        if self.buffer is None or self.payout is None:
+            return None
+        return self.initial_balance + self.buffer + self.payout
 
 
 @dataclass
@@ -100,14 +118,15 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
         heartbeat_interval_seconds=int(srv_data.get("heartbeat_interval_seconds", 5)),
         default_fail_action=srv_data.get("default_fail_action", "flatten"),
         audit_log_path=srv_data.get("audit_log_path", "logs/gate_audit.log"),
+        log_timezone=srv_data.get("log_timezone", "America/Chicago"),
     )
 
     sess_data = data.get("session", {})
     session = SessionConfig(
         mode=sess_data.get("mode", "24h_with_break"),
         timezone=sess_data.get("timezone", "America/Chicago"),
-        daily_break_start=sess_data.get("daily_break_start", "15:00"),
-        daily_break_end=sess_data.get("daily_break_end", "16:00"),
+        daily_break_start=sess_data.get("daily_break_start", "16:00"),
+        daily_break_end=sess_data.get("daily_break_end", "17:00"),
         pre_break_buffer_minutes=int(sess_data.get("pre_break_buffer_minutes", 5)),
     )
 
@@ -136,8 +155,8 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
             max_contracts_mini=int(pdata["max_contracts_mini"]),
             max_contracts_micro=int(pdata["max_contracts_micro"]),
             min_trade_duration_seconds=float(pdata.get("min_trade_duration_seconds", 10.0)),
-            session_start_time_et=pdata.get("session_start_time_et", "09:30"),
-            session_flatten_time_et=pdata.get("session_flatten_time_et", "15:55"),
+            session_start_time=pdata.get("session_start_time", "08:30"),
+            session_flatten_time=pdata.get("session_flatten_time", "14:55"),
             lock_day_after_consistency_cap=bool(pdata.get("lock_day_after_consistency_cap", True)),
             min_days_of_profit=pdata.get("min_days_of_profit"),
             min_profit_day_amount=float(pdata["min_profit_day_amount"]) if pdata.get("min_profit_day_amount") is not None else _parse_min_profit(pdata.get("min_days_of_profit")),
@@ -145,7 +164,14 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
             lock_day_after_qualifying_profit=bool(pdata.get("lock_day_after_qualifying_profit", True)),
             days_to_payout=int(pdata["days_to_payout"]) if pdata.get("days_to_payout") is not None else None,
             scaling_plan=bool(pdata.get("scaling_plan", False)),
+            buffer=float(pdata["buffer"]) if pdata.get("buffer") is not None else None,
+            payout=float(pdata["payout"]) if pdata.get("payout") is not None else None,
         )
+        if presets[pid].phase == "funded" and presets[pid].balance_for_payout is None:
+            logger.warning(
+                "Preset '%s' (funded) sin 'buffer'/'payout': balance_for_payout no definido, "
+                "el gate no aplicara la logica de payout hasta configurarlos.", pid
+            )
 
     accounts = {str(k): str(v) for k, v in data.get("accounts", {}).items()}
 

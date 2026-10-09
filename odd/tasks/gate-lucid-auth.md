@@ -16,7 +16,7 @@ Implementar el gate de autorización fail-closed vía TCP entre Python y NinjaTr
 - [x] **TASK-01: Configuración declarativa de reglas de cuenta**
   - **Ruta:** Inline
   - **Archivos:** `config/lucid_rules.yaml`, `src/gate/config.py`, `tests/test_config.py`
-  - **Descripción:** Definir esquemas y valores exactos para 25k, 50k y 100k (Eval y Funded), validando EOD DD, DLL, max contracts NQ/MNQ, 50% consistency, min trade duration, y flattening time (15:55 ET).
+  - **Descripción:** Definir esquemas y valores exactos para 25k, 50k y 100k (Eval y Funded), validando EOD DD, DLL, max contracts NQ/MNQ, 50% consistency, min trade duration, y flattening time (14:55 CT).
   - **Verificación:** `python3 -m unittest tests/test_config.py` (4 tests OK). Commit `0e15913`.
 
 - [x] **TASK-02: Motor de riesgo en Python (`RiskEngine`)**
@@ -42,6 +42,24 @@ Implementar el gate de autorización fail-closed vía TCP entre Python y NinjaTr
   - **Archivos:** `ninjatrader/Custom/Strategies/AuthorizedStrategyBase.cs`, `ninjatrader/Custom/Strategies/SampleAuthorizedNQStrategy.cs`, `src/gate/main.py`, `docs/RUNBOOK_VPS_WINDOWS.md`
   - **Descripción:** Implementar `AuthorizedStrategyBase` en C# para NinjaTrader 8: detección de Strategy Analyzer vs Live/Sim, socket TCP no bloqueante a Python, consulta previa a entries, enforcement de Stop Loss obligatorio local, bypass de SL/TP, listener de flags PAUSE/FLATTEN, telemetría en OnExecutionUpdate y reconciliación al inicio.
   - **Verificación:** Código compilable en .NET Framework 4.8 / NT8, contratos validados contra la suite de tests y runbook de VPS documentado. Commit `7007c2d`.
+
+## Cambios aceptados (2026-10-09)
+
+Origen: aclaraciones del usuario (operador en Costa Rica, UTC-6 fijo; Chicago usa DST). Decisión: reglas de mercado ancladas a `America/Chicago`; zona de logs configurable (`server.log_timezone`, default `America/Chicago`).
+
+- [x] **TASK-06: Zona horaria CST/CT y renombre de campos de sesión**
+  - **Ruta:** Inline (acoplado a TASK-07; mismo contexto de código ya mapeado).
+  - **Archivos:** `config/lucid_rules.yaml`, `src/gate/config.py`, `src/gate/risk_engine.py`, `src/gate/server.py`, `src/gate/main.py`, `ninjatrader/Custom/Strategies/*.cs`, `tests/*`, `docs/RUNBOOK_VPS_WINDOWS.md`, `userstory.md`
+  - **Descripción:** `session_start_time_et`->`session_start_time`, `session_flatten_time_et`->`session_flatten_time` (valores convertidos a hora de Chicago: 08:30 / 14:55). Logs y timestamps en zona configurable en vez de UTC. Corregir break CME a 16:00-17:00 CT (verificado con fuentes públicas; antes estaba 15:00-16:00). Tests sin dependencia de `datetime.now()` (fecha fija).
+  - **Verificación:** `python3 -m unittest discover tests` (47 tests OK, RED observado antes de implementar). Timestamps C#/NT8 no verificables en este entorno (sin .NET): requieren F5 en NT8.
+
+- [x] **TASK-07: Cuentas Funded - buffer, payout y balance_for_payout**
+  - **Ruta:** Inline.
+  - **Archivos:** `config/lucid_rules.yaml`, `src/gate/config.py`, `src/gate/risk_engine.py`, `tests/test_config.py`, `tests/test_risk_engine.py`
+  - **Descripción:** Campos `buffer`, `payout` y `balance_for_payout` (= initial_balance + buffer + payout, derivado). `min_account_balance` en funded = piso de liquidación (tope del trailing), no balance de retiro. Bloqueo del día calificado solo después de alcanzar `balance_for_payout` y mientras falten días calificados. `get_payout_status` valida contra `balance_for_payout`.
+  - **Datos:** `buffer`/`payout` tomados de `Rules/Lucid.xlsx` (FLEX FUNDED): 25K 1.100/1.000, 50K 2.100/2.000, 100K 3.100/3.000 -> balance_for_payout 27.100 / 54.100 / 106.100. Si faltan, el gate no aplica lógica de payout y avisa al cargar.
+  - **Pendiente:** el workbook trae además columnas "FLEX PAYOUT" (fase posterior al primer payout; payout mayor); sin presets todavía.
+  - **Verificación:** tests unitarios de ambas fases (acumular balance / calificar días), piso funded y elegibilidad.
 
 ## Verificación y Cierre
 - Cobertura de pruebas unitarias e integración en Python.

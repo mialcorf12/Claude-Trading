@@ -5,21 +5,25 @@ import logging
 import signal
 import sys
 from pathlib import Path
+import zoneinfo
 
 from src.gate.config import load_config
+from src.gate.logging_utils import TzFormatter
 from src.gate.server import GateServer
 
 
-def setup_logging():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
-        handlers=[logging.StreamHandler(sys.stdout)],
+def setup_logging(tz_name: str = "America/Chicago"):
+    """Configura logs a consola con timestamps en la zona horaria indicada (no UTC)."""
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(
+        TzFormatter("%(asctime)s [%(levelname)s] [%(name)s] %(message)s", zoneinfo.ZoneInfo(tz_name))
     )
+    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
 
 
 async def run_server(config_path: str):
     config = load_config(config_path)
+    setup_logging(config.server.log_timezone)
     server = GateServer(config)
 
     loop = asyncio.get_running_loop()

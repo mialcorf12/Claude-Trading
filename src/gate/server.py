@@ -1,10 +1,11 @@
 """Servidor TCP asincrono para el gate de autorizacion Python <-> NinjaTrader 8."""
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, tzinfo
 import json
 import logging
 from pathlib import Path
 from typing import Dict, Optional, Set
+import zoneinfo
 
 from src.gate.config import GateConfig
 from src.gate.protocol import decode_message, encode_message, ProtocolError
@@ -19,15 +20,19 @@ logger = logging.getLogger("gate.server")
 
 
 class AuditLogger:
-    """Registra cada solicitud, respuesta y evento con timestamp UTC estructurado."""
+    """Registra cada solicitud, respuesta y evento con timestamp ISO-8601 en la zona horaria configurada.
 
-    def __init__(self, log_path: str):
+    El offset va incluido en el timestamp (ej. 2026-10-09T12:34:56-05:00), por lo que sigue siendo inequivoco.
+    """
+
+    def __init__(self, log_path: str, tz: Optional[tzinfo] = None):
         self.path = Path(log_path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.tz = tz or zoneinfo.ZoneInfo("America/Chicago")
 
     def log_event(self, event_type: str, payload: dict) -> None:
         record = {
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(self.tz).isoformat(),
             "event": event_type,
             "data": payload,
         }
@@ -41,7 +46,8 @@ class GateServer:
     def __init__(self, config: GateConfig, risk_engine: Optional[RiskEngine] = None):
         self.config = config
         self.risk_engine = risk_engine or RiskEngine(config)
-        self.audit = AuditLogger(config.server.audit_log_path)
+        self.log_tz = zoneinfo.ZoneInfo(config.server.log_timezone)
+        self.audit = AuditLogger(config.server.audit_log_path, self.log_tz)
         self.server: Optional[asyncio.Server] = None
         self.connected_clients: Set[asyncio.StreamWriter] = set()
         self.client_tasks: Set[asyncio.Task] = set()
@@ -97,7 +103,7 @@ class GateServer:
 
                 msg = {
                     "type": "HEARTBEAT",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(self.log_tz).isoformat(),
                 }
                 raw = encode_message(msg)
                 for writer in list(self.connected_clients):
@@ -247,7 +253,7 @@ class GateServer:
         elif msg_type == "HEARTBEAT":
             ack = {
                 "type": "HEARTBEAT_ACK",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(self.log_tz).isoformat(),
             }
             writer.write(encode_message(ack))
             await writer.drain()

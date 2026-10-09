@@ -10,13 +10,16 @@ server:
   heartbeat_interval_seconds: 5      # Intervalo de latido obligatorio
   default_fail_action: "flatten"     # "hold" | "flatten" al perder conexion o heartbeat
   audit_log_path: "logs/gate_audit.log"
+  log_timezone: "America/Chicago"    # Zona horaria de logs/timestamps. Para reloj fijo de Costa Rica (UTC-6): "America/Costa_Rica"
 
+# Hora oficial del CME = America/Chicago (CST invierno UTC-6 / CDT verano UTC-5, con DST).
+# Costa Rica es UTC-6 todo el año: coincide con Chicago solo en invierno (nov-mar).
 session:
   mode: "24h_with_break"              # Opera 24hs continuo excepto en el break del CME
-  timezone: "America/Chicago"         # CST/CDT (Chicago - horario oficial CME)
-  daily_break_start: "15:00"          # 3:00 PM CST (16:00 ET) - Cierre diario de mantenimiento
-  daily_break_end: "16:00"            # 4:00 PM CST (17:00 ET) - Reapertura Globex
-  pre_break_buffer_minutes: 5         # Bloquear entradas 5 min antes del break (14:55 CST / 15:55 ET)
+  timezone: "America/Chicago"         # Las horas de abajo y de los presets estan en esta zona
+  daily_break_start: "16:00"          # 16:00 CT = 17:00 ET: inicio del break de mantenimiento (L-J) / cierre semanal (V)
+  daily_break_end: "17:00"            # 17:00 CT = 18:00 ET: reapertura Globex (diaria y domingo)
+  pre_break_buffer_minutes: 5         # Bloquear entradas 5 min antes del break (15:55 CT)
 
 instruments:
   NQ:
@@ -47,8 +50,8 @@ presets:
     max_contracts_mini: 2            # Maximo contratos NQ
     max_contracts_micro: 20          # Maximo contratos MNQ
     min_trade_duration_seconds: 10.0 # Bloqueo anti-microscalping
-    session_start_time_et: "09:30"
-    session_flatten_time_et: "15:55" # Aplanado mandatorio antes de las 16:00 ET
+    session_start_time: "08:30"            # 09:30 ET = 08:30 CT
+    session_flatten_time: "14:55"         # 15:55 ET = 14:55 CT (antes del cierre de cash 15:00 CT)
 
   "50k_flex_eval":
     tier: "50K"
@@ -64,8 +67,8 @@ presets:
     max_contracts_mini: 4
     max_contracts_micro: 40
     min_trade_duration_seconds: 10.0
-    session_start_time_et: "09:30"
-    session_flatten_time_et: "15:55"
+    session_start_time: "08:30"            # 09:30 ET = 08:30 CT
+    session_flatten_time: "14:55"
 
   "100k_flex_eval":
     tier: "100K"
@@ -81,8 +84,8 @@ presets:
     max_contracts_mini: 6
     max_contracts_micro: 60
     min_trade_duration_seconds: 10.0
-    session_start_time_et: "09:30"
-    session_flatten_time_et: "15:55"
+    session_start_time: "08:30"            # 09:30 ET = 08:30 CT
+    session_flatten_time: "14:55"
 
   "25k_flex_funded":
     tier: "25K"
@@ -93,18 +96,21 @@ presets:
     max_loss_limit: 1000.0
     drawdown_type: "EOD"
     consistency_cap_pct: null
-    min_account_balance: 25100.0     # Payout buffer minimo
+    min_account_balance: 25100.0     # Piso de liquidacion: el trailing deja de subir aqui; por debajo se pierde la cuenta
     min_days_of_profit: "5 of $100"
     min_profit_day_amount: 100.0     # Minimo $100 por dia para calificar
     min_profit_days_required: 5      # 5 dias de ganancia requeridos
-    lock_day_after_qualifying_profit: true # Proteger el dia una vez alcanzado el objetivo
+    lock_day_after_qualifying_profit: true # Tras alcanzar balance_for_payout: bloquear el dia al llegar a min_profit_day_amount
+    buffer: 1100.0                  # Rules/Lucid.xlsx (Buffer)
+    payout: 1000.0                  # Rules/Lucid.xlsx (Payout)
+    # balance_for_payout = initial_balance + buffer + payout (se calcula; null mientras falte buffer o payout)
     days_to_payout: 5
     scaling_plan: true
     max_contracts_mini: 2
     max_contracts_micro: 20
     min_trade_duration_seconds: 10.0
-    session_start_time_et: "09:30"
-    session_flatten_time_et: "15:55"
+    session_start_time: "08:30"            # 09:30 ET = 08:30 CT
+    session_flatten_time: "14:55"
 
   "50k_flex_funded":
     tier: "50K"
@@ -120,13 +126,16 @@ presets:
     min_profit_day_amount: 150.0
     min_profit_days_required: 5
     lock_day_after_qualifying_profit: true
+    buffer: 2100.0                  # Rules/Lucid.xlsx (Buffer)
+    payout: 2000.0                  # Rules/Lucid.xlsx (Payout)
+    # balance_for_payout = initial_balance + buffer + payout
     days_to_payout: 5
     scaling_plan: true
     max_contracts_mini: 4
     max_contracts_micro: 40
     min_trade_duration_seconds: 10.0
-    session_start_time_et: "09:30"
-    session_flatten_time_et: "15:55"
+    session_start_time: "08:30"            # 09:30 ET = 08:30 CT
+    session_flatten_time: "14:55"
 
   "100k_flex_funded":
     tier: "100K"
@@ -142,13 +151,16 @@ presets:
     min_profit_day_amount: 200.0
     min_profit_days_required: 5
     lock_day_after_qualifying_profit: true
+    buffer: 3100.0                  # Rules/Lucid.xlsx (Buffer)
+    payout: 3000.0                  # Rules/Lucid.xlsx (Payout)
+    # balance_for_payout = initial_balance + buffer + payout
     days_to_payout: 5
     scaling_plan: true
     max_contracts_mini: 6
     max_contracts_micro: 60
     min_trade_duration_seconds: 10.0
-    session_start_time_et: "09:30"
-    session_flatten_time_et: "15:55"
+    session_start_time: "08:30"            # 09:30 ET = 08:30 CT
+    session_flatten_time: "14:55"
 
 # Mapeo de cuentas activas en NinjaTrader a sus presets de reglas
 accounts:

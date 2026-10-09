@@ -72,7 +72,6 @@ class RiskEngine:
         self.config = config
         self.accounts: Dict[str, AccountState] = {}
         self.strategy_paused: Dict[str, bool] = {}
-        self.ny_tz = zoneinfo.ZoneInfo("America/New_York")
         self.cme_tz = zoneinfo.ZoneInfo(config.session.timezone)
 
     def register_account(self, account_name: str, balance: Optional[float] = None) -> AccountState:
@@ -107,34 +106,73 @@ class RiskEngine:
             return True
         return False
 
+    @staticmethod
+    def _is_today_qualifying(acc: AccountState) -> bool:
+        amount = acc.preset.min_profit_day_amount
+        return amount is not None and acc.realized_pnl_today >= amount
+
+    @staticmethod
+    def _has_balance_for_payout(acc: AccountState) -> bool:
+        target = acc.preset.balance_for_payout
+        return target is not None and acc.current_balance >= target
+
     def get_payout_status(self, account_name: str) -> Dict[str, object]:
-        """Calcula el estado de cumplimiento de los requisitos de payout para cuentas funded."""
+        """Estado de elegibilidad de payout (solo Funded).
+
+        Elegible = dias calificados (historicos + hoy) >= min_profit_days_required
+                   Y balance actual >= balance_for_payout (initial_balance + buffer + payout).
+        mode indica el objetivo vigente:
+          - accumulate_balance: aun no se alcanza balance_for_payout (maximizar ganancia).
+          - qualify_days: balance_for_payout alcanzado; faltan dias, cada uno requiere min_profit_day_amount.
+          - eligible: se cumplen ambas condiciones.
+          - payout_not_configured: faltan buffer/payout en la configuracion.
+        """
         acc = self.accounts.get(account_name)
         if not acc:
             return {"error": f"Cuenta {account_name} no registrada"}
-        
+
         preset = acc.preset
-        is_today_qualifying = (
-            preset.min_profit_day_amount is not None
-            and acc.realized_pnl_today >= preset.min_profit_day_amount
-        )
-        total_qualifying = len(acc.qualifying_days_history) + (1 if is_today_qualifying else 0)
-        has_min_days = total_qualifying >= preset.min_profit_days_required
-        has_min_balance = acc.current_balance >= preset.min_account_balance
+        if preset.phase != "funded":
+            return {"account": account_name, "phase": preset.phase, "payout_applicable": False}
+
+        is_today_qualifying = self._is_today_qualifying(acc)
+        qualified_days = len(acc.qualifying_days_history) + (1 if is_today_qualifying else 0)
+        has_min_days = qualified_days >= preset.min_profit_days_required
+        target = preset.balance_for_payout
+        payout_configured = target is not None
+        has_balance = self._has_balance_for_payout(acc)
+        eligible = payout_configured and has_min_days and has_balance
+
+        if not payout_configured:
+            mode = "payout_not_configured"
+        elif eligible:
+            mode = "eligible"
+        elif has_balance:
+            mode = "qualify_days"
+        else:
+            mode = "accumulate_balance"
 
         return {
             "account": account_name,
             "phase": preset.phase,
+            "payout_applicable": True,
+            "payout_configured": payout_configured,
+            "mode": mode,
             "current_balance": acc.current_balance,
-            "min_account_balance": preset.min_account_balance,
+            "initial_balance": preset.initial_balance,
+            "buffer": preset.buffer,
+            "payout": preset.payout,
+            "balance_for_payout": target,
+            "balance_remaining": max(0.0, target - acc.current_balance) if payout_configured else None,
             "realized_pnl_today": acc.realized_pnl_today,
             "min_profit_day_amount": preset.min_profit_day_amount,
-            "qualified_days_count": total_qualifying,
+            "qualified_days_count": qualified_days,
             "required_qualifying_days": preset.min_profit_days_required,
+            "days_remaining": max(0, preset.min_profit_days_required - qualified_days),
             "is_today_qualifying": is_today_qualifying,
             "has_min_days": has_min_days,
-            "has_min_balance": has_min_balance,
-            "is_payout_eligible": has_min_days and has_min_balance,
+            "has_balance_for_payout": has_balance,
+            "is_payout_eligible": eligible,
         }
 
     def get_account_state(self, account_name: str) -> Optional[AccountState]:
@@ -241,7 +279,9 @@ class RiskEngine:
                 reason=f"ACCOUNT_PAUSED_OR_FLATTENED: La cuenta '{req.account}' esta pausada o en flatten",
             )
 
-        # 4. Horarios de sesión: Operación 24hs con corte diario de liquidación/mantenimiento CME (3:00 - 4:00 PM CST)
+        # 4. Horarios de sesión (hora de Chicago, la oficial del CME; sigue el DST de Chicago).
+        # 24h con break diario de mantenimiento 16:00-17:00 CT (17:00-18:00 ET); cierre semanal V 16:00 CT
+        # y reapertura domingo 17:00 CT.
         now_cme = current_time.astimezone(self.cme_tz) if current_time is not None else datetime.now(self.cme_tz)
         session_cfg = self.config.session
 
@@ -251,17 +291,17 @@ class RiskEngine:
             break_start = time.fromisoformat(session_cfg.daily_break_start)
             break_end = time.fromisoformat(session_cfg.daily_break_end)
 
-            # Buffer de pre-cierre (ej. 5 min antes: 14:55 CST / 15:55 ET)
+            # Buffer de pre-cierre (5 min antes del break: 15:55 CT)
             dummy_dt = datetime(2026, 1, 1, break_start.hour, break_start.minute, break_start.second)
             buffered_start = (dummy_dt - timedelta(minutes=session_cfg.pre_break_buffer_minutes)).time()
 
-            # Fin de semana (Viernes post-corte 15:00 CST hasta Domingo reapertura 17:00 CST)
+            # Fin de semana: desde el viernes (buffer previo al cierre) hasta la reapertura del domingo
             if weekday == 4 and t_cme >= buffered_start:
                 return AuthResponse(
                     request_id=req.request_id,
                     allow=False,
                     max_qty=0,
-                    reason=f"WEEKEND_CLOSED: Mercado CME cerrado por fin de semana desde Viernes {buffered_start.strftime('%H:%M')} CST",
+                    reason=f"WEEKEND_CLOSED: Mercado CME cerrado por fin de semana desde el viernes {buffered_start.strftime('%H:%M')} CT",
                 )
             if weekday == 5:
                 return AuthResponse(
@@ -270,40 +310,44 @@ class RiskEngine:
                     max_qty=0,
                     reason="WEEKEND_CLOSED: Mercado CME cerrado los sabados",
                 )
-            if weekday == 6 and t_cme < time(17, 0):
+            if weekday == 6 and t_cme < break_end:
                 return AuthResponse(
                     request_id=req.request_id,
                     allow=False,
                     max_qty=0,
-                    reason="WEEKEND_CLOSED: Mercado CME reabre Domingos a las 17:00 CST (18:00 ET)",
+                    reason=f"WEEKEND_CLOSED: Mercado CME reabre el domingo a las {break_end.strftime('%H:%M')} CT",
                 )
 
-            # Lunes a Jueves: Break diario de liquidación y mantenimiento (15:00 a 16:00 CST)
+            # Break diario de mantenimiento (incluye el buffer previo)
             if buffered_start <= t_cme < break_end:
                 return AuthResponse(
                     request_id=req.request_id,
                     allow=False,
                     max_qty=0,
-                    reason=f"CME_DAILY_BREAK: Mercado en break diario de liquidacion/mantenimiento ({buffered_start.strftime('%H:%M')} - {break_end.strftime('%H:%M')} CST). Reapertura Globex a las {break_end.strftime('%H:%M')} CST.",
+                    reason=f"CME_DAILY_BREAK: Entradas bloqueadas por break diario del CME ({buffered_start.strftime('%H:%M')} - {break_end.strftime('%H:%M')} CT). Reapertura Globex a las {break_end.strftime('%H:%M')} CT.",
                 )
         else:
-            # Modo RTH tradicional
+            # Modo RTH tradicional (horas de preset en hora de Chicago)
             t_now = now_cme.time()
-            start_t = time.fromisoformat(preset.session_start_time_et)
-            flatten_t = time.fromisoformat(preset.session_flatten_time_et)
+            start_t = time.fromisoformat(preset.session_start_time)
+            flatten_t = time.fromisoformat(preset.session_flatten_time)
             if not (start_t <= t_now < flatten_t):
                 return AuthResponse(
                     request_id=req.request_id,
                     allow=False,
                     max_qty=0,
-                    reason=f"OUTSIDE_TRADING_HOURS: Hora actual {t_now.strftime('%H:%M')} fuera del rango permitido ({preset.session_start_time_et} - {preset.session_flatten_time_et} ET)",
+                    reason=f"OUTSIDE_TRADING_HOURS: Hora actual {t_now.strftime('%H:%M')} fuera del rango permitido ({preset.session_start_time} - {preset.session_flatten_time} CT)",
                 )
 
         # 5. Drawdown EOD y piso de liquidación (Criterio 9)
         current_equity = acc.current_balance + acc.unrealized_pnl
-        # Piso EOD: min_account_balance inicial o el trailing EOD
         trailing_floor = acc.eod_hwm - preset.max_loss_limit
-        effective_floor = max(preset.min_account_balance, trailing_floor)
+        if preset.phase == "funded":
+            # Funded: el trailing sube con el HWM pero se detiene en min_account_balance (piso final).
+            effective_floor = min(trailing_floor, preset.min_account_balance)
+        else:
+            # Eval: min_account_balance es el piso inicial; el trailing EOD lo sube.
+            effective_floor = max(preset.min_account_balance, trailing_floor)
 
         if current_equity <= effective_floor:
             return AuthResponse(
@@ -340,20 +384,30 @@ class RiskEngine:
                     reason=f"CONSISTENCY_CAP_REACHED: Profit de hoy (${acc.realized_pnl_today:.2f}) alcanzo el tope de consistencia de {int(preset.consistency_cap_pct*100)}% (${max_single_day_profit:.2f}). Entradas bloqueadas para proteger la aprobacion de la cuenta.",
                 )
 
-        # 7b. Requisito de dias de ganancia minima en cuentas Funded (min_days_of_profit)
+        # 7b. Funded: objetivo = llegar a balance_for_payout lo antes posible; NO se bloquea el dia mientras
+        # no se alcance. Una vez alcanzado, los dias restantes necesitan solo min_profit_day_amount: al
+        # lograrlo se bloquea el dia para asegurarlo (mientras falten dias calificados historicos).
         if (
             preset.phase == "funded"
             and preset.lock_day_after_qualifying_profit
             and preset.min_profit_day_amount
+            and self._has_balance_for_payout(acc)
+            and self._is_today_qualifying(acc)
+            and len(acc.qualifying_days_history) < preset.min_profit_days_required
         ):
-            if acc.realized_pnl_today >= preset.min_profit_day_amount:
-                qualified_so_far = len(acc.qualifying_days_history) + 1
-                return AuthResponse(
-                    request_id=req.request_id,
-                    allow=False,
-                    max_qty=0,
-                    reason=f"FUNDED_QUALIFYING_DAY_LOCKED: Profit de hoy (${acc.realized_pnl_today:.2f}) ya supero el minimo requerido (${preset.min_profit_day_amount:.2f}). Entradas bloqueadas para asegurar el dia calificado para payout ({qualified_so_far}/{preset.min_profit_days_required} dias).",
-                )
+            qualified_so_far = len(acc.qualifying_days_history) + 1
+            return AuthResponse(
+                request_id=req.request_id,
+                allow=False,
+                max_qty=0,
+                reason=(
+                    f"FUNDED_QUALIFYING_DAY_LOCKED: balance_for_payout alcanzado "
+                    f"(${acc.current_balance:.2f} >= ${preset.balance_for_payout:.2f}) y el profit de hoy "
+                    f"(${acc.realized_pnl_today:.2f}) ya cumple min_profit_day_amount "
+                    f"(${preset.min_profit_day_amount:.2f}). Entradas bloqueadas para asegurar el dia calificado "
+                    f"({qualified_so_far}/{preset.min_profit_days_required} dias)."
+                ),
+            )
 
         # 8. Limite de contratos NQ / MNQ (Criterio 9)
         inst_info = self.config.instruments.get(req.instrument)

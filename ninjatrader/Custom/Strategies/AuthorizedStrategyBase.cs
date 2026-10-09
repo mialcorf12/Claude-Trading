@@ -87,8 +87,7 @@ namespace NinjaTrader.NinjaScript.Strategies
         {
             if (State != State.SetDefaults)
             {
-                Print(string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff UTC}] [{1}] [STATE] Transición a estado: {2}",
-                    DateTime.UtcNow, StrategyId, State));
+                LogAudit(string.Format("[STATE] Transición a estado: {0}", State));
             }
 
             if (State == State.SetDefaults)
@@ -541,11 +540,40 @@ namespace NinjaTrader.NinjaScript.Strategies
         #endregion
 
         #region Helpers & Audit
+        // Hora oficial del CME = Chicago. El ID de Windows "Central Standard Time" es US Central (sigue el DST
+        // de Chicago: CST invierno / CDT verano). No confundir con "Central America Standard Time" (Costa Rica, UTC-6 fijo).
+        private static readonly TimeZoneInfo ExchangeTimeZone = ResolveExchangeTimeZone();
+
+        private static TimeZoneInfo ResolveExchangeTimeZone()
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+            }
+            catch (Exception)
+            {
+                return TimeZoneInfo.Local;
+            }
+        }
+
+        /// <summary>
+        /// Convierte un instante de barra de NinjaTrader (hora local de la máquina) a hora de Chicago.
+        /// </summary>
+        protected static DateTime ToExchangeTime(DateTime localTime)
+        {
+            return TimeZoneInfo.ConvertTime(localTime, TimeZoneInfo.Local, ExchangeTimeZone);
+        }
+
+        private static string FormatLogTimestamp(DateTime utcNow)
+        {
+            DateTime chicago = TimeZoneInfo.ConvertTimeFromUtc(utcNow, ExchangeTimeZone);
+            string abbreviation = ExchangeTimeZone.IsDaylightSavingTime(chicago) ? "CDT" : "CST";
+            return string.Format("{0:yyyy-MM-dd HH:mm:ss.fff} {1}", chicago, abbreviation);
+        }
+
         protected void LogAudit(string message)
         {
-            string logLine = string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff UTC}] [{1}] {2}",
-                DateTime.UtcNow, StrategyId, message);
-            Print(logLine);
+            Print(string.Format("[{0}] [{1}] {2}", FormatLogTimestamp(DateTime.UtcNow), StrategyId, message));
         }
         #endregion
     }

@@ -35,11 +35,11 @@ class TestIntegrationAndFailures(unittest.IsolatedAsyncioTestCase):
         self.risk_engine = RiskEngine(self.config)
         self.risk_engine.register_account("Sim101", balance=25000.0)
 
-        # Fijar hora RTH para evitar rechazo por horario durante tests
-        ny_tz = zoneinfo.ZoneInfo("America/New_York")
+        # Fijar un miercoles 10:30 hora de Chicago (determinista, independiente del reloj real)
+        cme_tz = zoneinfo.ZoneInfo("America/Chicago")
         self.risk_engine.evaluate_authorization_orig = self.risk_engine.evaluate_authorization
         self.risk_engine.evaluate_authorization = lambda req: self.risk_engine.evaluate_authorization_orig(
-            req, current_time=datetime.now(ny_tz).replace(hour=10, minute=30, second=0)
+            req, current_time=datetime(2026, 10, 7, 10, 30, tzinfo=cme_tz)
         )
 
         self.server = GateServer(self.config, risk_engine=self.risk_engine)

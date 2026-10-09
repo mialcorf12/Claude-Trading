@@ -35,12 +35,12 @@ namespace NinjaTrader.NinjaScript.Strategies
         public double ProfitTargetPoints { get; set; } = 40.0;
 
         [NinjaScriptProperty]
-        [Display(Name = "ORB Start Time (ET)", Description = "Inicio del rango de apertura", Order = 4, GroupName = "2. Strategy Logic")]
-        public string OrbStartTime { get; set; } = "09:30";
+        [Display(Name = "ORB Start Time (CT)", Description = "Inicio del rango de apertura, hora de Chicago (08:30 CT = 09:30 ET)", Order = 4, GroupName = "2. Strategy Logic")]
+        public string OrbStartTime { get; set; } = "08:30";
 
         [NinjaScriptProperty]
-        [Display(Name = "ORB End Time (ET)", Description = "Fin del rango de apertura (calcula High/Low)", Order = 5, GroupName = "2. Strategy Logic")]
-        public string OrbEndTime { get; set; } = "09:45";
+        [Display(Name = "ORB End Time (CT)", Description = "Fin del rango de apertura, hora de Chicago (calcula High/Low)", Order = 5, GroupName = "2. Strategy Logic")]
+        public string OrbEndTime { get; set; } = "08:45";
         #endregion
 
         #region Private Variables
@@ -77,7 +77,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (CurrentBar < BarsRequiredToTrade)
                 return;
 
-            DateTime barTime = Time[0];
+            // Las ventanas del ORB se expresan en hora de Chicago (reloj del exchange), sin depender de la zona del VPS
+            DateTime barTime = ToExchangeTime(Time[0]);
 
             // Reset diario
             if (barTime.Day != currentTradingDay)
@@ -93,7 +94,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             TimeSpan orbStart = TimeSpan.Parse(OrbStartTime);
             TimeSpan orbEnd = TimeSpan.Parse(OrbEndTime);
 
-            // 1. Construir rango de apertura (09:30 a 09:45)
+            // 1. Construir rango de apertura (08:30 a 08:45 CT)
             if (t >= orbStart && t <= orbEnd)
             {
                 if (High[0] > orbHigh) orbHigh = High[0];

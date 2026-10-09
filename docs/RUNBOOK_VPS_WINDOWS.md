@@ -28,7 +28,7 @@ Asegurarse de que todos los checks críticos den `[OK]`:
 
 2. Instalar dependencias requeridas:
    ```cmd
-   pip install pyyaml
+   pip install pyyaml tzdata
    ```
 
 3. Verificar que la suite de pruebas pase al 100%:
@@ -105,8 +105,8 @@ python -m src.gate.main --config config/lucid_rules.yaml
       - Dale a OK.
    - Revisá la ventana Output de NinjaTrader (New > NinjaScript Output). Deberías ver:
      ```text
-     [YYYY-MM-DD HH:MM:SS.FFF UTC] [ORB_NQ_SAMPLE_01] [CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
-     [YYYY-MM-DD HH:MM:SS.FFF UTC] [ORB_NQ_SAMPLE_01] [RECONCILE] Información de posición enviada al Gate
+     [YYYY-MM-DD HH:MM:SS.FFF CDT] [ORB_NQ_SAMPLE_01] [CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
+     [YYYY-MM-DD HH:MM:SS.FFF CDT] [ORB_NQ_SAMPLE_01] [RECONCILE] Información de posición enviada al Gate
      ```
    - Al generarse una señal, verificar en `logs/gate_audit.log` el registro de auditoría con la autorización concedida o denegada.
 
@@ -123,3 +123,13 @@ Revisá la ventana Output de NinjaTrader (New > NinjaScript Output). Deberías v
 [CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
 [RECONCILE] Información de posición enviada al Gate
 Y en la terminal de Python verás el log del cliente conectado y la reconciliación procesada.
+
+---
+
+## 6. Zonas horarias (importante)
+
+- **Reglas de mercado = hora de Chicago (`America/Chicago`)**: break diario del CME 16:00-17:00 CT (17:00-18:00 ET), cierre semanal el viernes 16:00 CT y reapertura el domingo 17:00 CT. Siguen el horario de verano de Chicago automaticamente.
+- **Costa Rica es UTC-6 todo el año**; Chicago es UTC-5 (CDT) de marzo a noviembre. En verano el break se ve a las **15:00-16:00 en el reloj de Costa Rica**; en invierno coincide con Chicago (16:00-17:00).
+- **Logs y timestamps** usan `server.log_timezone` (default `America/Chicago`, con sufijo CST/CDT). Para ver el reloj fijo de Costa Rica: `log_timezone: "America/Costa_Rica"`.
+- `tzdata` es obligatorio en Windows para que Python resuelva `America/Chicago`.
+- Los campos `session_start_time` / `session_flatten_time` de cada preset estan en hora de Chicago y solo aplican en `session.mode: "rth_only"`.
