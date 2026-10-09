@@ -77,6 +77,15 @@ Origen: aclaraciones del usuario (operador en Costa Rica, UTC-6 fijo; Chicago us
   - **Cambios derivados:** HWM del trailing EOD solo sube al cerrar el día (antes subía intradía); C# envía `CashValue` (antes `BuyingPower`) y `UnrealizedProfitLoss` de cuenta; JSON de C# con `CultureInfo.InvariantCulture` (coma decimal en es-CR rompería el JSON).
   - **Verificación:** `python3 -m unittest discover tests` (72 OK, RED previo). C# sin compilar en este entorno: requiere F5 en NT8.
 
+## Dashboard web (2026-10-09)
+
+- [x] **TASK-10: Dashboard web de solo lectura sobre `state/gate_state.json` y `logs/gate_audit.log`**
+  - **Ruta:** Inline (continuación del mismo contexto; sin dependencias nuevas).
+  - **Archivos:** `src/gate/rules.py` (fórmulas compartidas), `src/gate/risk_engine.py`, `src/dashboard/{data,server,main}.py`, `src/dashboard/static/index.html`, `tests/test_dashboard_*.py`, `docs/RUNBOOK_VPS_WINDOWS.md`
+  - **Descripción:** Proceso aparte (stdlib `http.server`, solo GET, 127.0.0.1 por defecto). Resumen macro (decisiones, aprobación, motivos de rechazo, latencia, estado del gate), métricas por cuenta (margen de drawdown/DLL, progreso Eval/Payout), días cerrados, decisiones y eventos. Filtros por cuenta y día de trading (corte 16:00 CT). Auto-refresh 5 min (o manual).
+  - **Verificación:** 107 tests OK (`tests/test_dashboard_data.py`, `tests/test_dashboard_server.py`) + prueba real en Chrome headless con datos generados por el motor. La revisión visual encontró y corrigió 2 bugs de la UI que los tests de Python no ven (KPI "Motivos de rechazo" mostraba `[object HTMLDivElement]`; los desplegables de filtro no se poblaban). Sin tests automáticos de JS.
+  - **Seguridad:** solo GET, lista blanca de rutas, validación de filtros, CSP `default-src 'self'`, textos dinámicos solo vía `textContent` (probado con `<img onerror>` en `strategy_id`).
+
 ## Verificación y Cierre
 - Cobertura de pruebas unitarias e integración en Python.
 - Verificación de contratos y estados fail-closed.

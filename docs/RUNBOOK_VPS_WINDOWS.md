@@ -147,3 +147,24 @@ Y en la terminal de Python verás el log del cliente conectado y la reconciliaci
 - **Estado persistido** en `state/gate_state.json` (`server.state_path`): baseline diario, HWM EOD, dias calificados y ultimos 90 dias cerrados. Sobrevive reinicios del gate. Si el archivo es ilegible se ignora y se registra un warning.
 - **Primer arranque de una cuenta:** el baseline es el primer balance que reporte NT8. Arranca el gate **antes del corte de las 16:00 CT** (o al inicio de la sesion) para que el PnL del primer dia sea correcto; si lo arrancas a mitad del dia, el PnL ya realizado ese dia no cuenta.
 - **No borres `state/`** en una cuenta Funded/Payout: contiene el historial de dias calificados para el payout. Respaldalo junto con `logs/`.
+
+---
+
+## 8. Dashboard web (solo lectura)
+
+Muestra un resumen macro del gate y permite filtrar por **cuenta** y por **dia de trading** (16:00 a 16:00 CT). Lee `state/gate_state.json` y `logs/gate_audit.log`; no escribe nada ni toca el trading, y corre como proceso aparte (sin dependencias nuevas).
+
+```powershell
+cd C:\TradingPlatform\Claude-Trading
+python -m src.dashboard.main --config config/lucid_rules.yaml
+```
+
+Abre **http://127.0.0.1:8780** en el navegador del VPS (por RDP). Opciones: `--port 8780`, `--host 127.0.0.1`.
+
+- **Se actualiza solo cada 5 min** (casilla "Auto-actualizar") o con el boton "Actualizar ahora". El filtro queda en la URL, asi que puedes guardar el enlace.
+- **Resumen:** estado del gate, decisiones aprobadas/rechazadas, tasa de aprobacion, latencia de decision, motivos de rechazo.
+- **Cuentas (snapshot actual):** colchon de drawdown, DLL restante, progreso al profit target (Eval) o al payout y dias calificados (Funded/Payout). Estados: En orden / Atencion (colchon < 30% del max loss o DLL usado >= 70%) / Critico.
+- **Dias cerrados, decisiones y eventos** con filtros por cuenta y dia.
+- **Limite:** solo ve lo que Python registro. Los rechazos locales de NT8 (timeout, socket caido) quedan en la ventana Output de NinjaTrader.
+- **Seguridad:** no tiene autenticacion. Por defecto escucha solo en `127.0.0.1`; si usas `--host 0.0.0.0`, restringelo por firewall/VPN.
+- **Arranque automatico (opcional):** crea una segunda tarea programada igual a la del gate (seccion 4) con el argumento `-m src.dashboard.main --config config/lucid_rules.yaml`.

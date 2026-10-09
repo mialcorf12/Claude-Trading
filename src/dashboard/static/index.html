@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gate Lucid - Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="title">
+      <h1>Gate Lucid</h1>
+      <span id="gate-pill" class="pill pill-muted">Sin datos</span>
+    </div>
+    <div class="controls">
+      <label>Cuenta
+        <select id="filter-account"><option value="">Todas</option></select>
+      </label>
+      <label>Día de trading
+        <select id="filter-day"><option value="">Todos</option></select>
+      </label>
+      <button id="btn-refresh" type="button">Actualizar ahora</button>
+      <label class="check"><input id="auto-refresh" type="checkbox" checked> Auto-actualizar (5 min)</label>
+      <span id="refresh-info" class="muted" aria-live="polite"></span>
+    </div>
+  </header>
+
+  <div id="error-banner" class="banner" hidden></div>
+
+  <main>
+    <section>
+      <h2>Resumen</h2>
+      <div id="kpis" class="kpis"></div>
+    </section>
+
+    <section>
+      <h2>Cuentas <span class="muted small">estado actual (snapshot de state/gate_state.json)</span></h2>
+      <div id="accounts" class="cards"></div>
+    </section>
+
+    <section>
+      <h2>Días cerrados</h2>
+      <div class="table-wrap"><table id="closed-days"></table></div>
+    </section>
+
+    <section>
+      <div class="section-head">
+        <h2>Decisiones del gate</h2>
+        <div id="decision-chips" class="chips" role="group" aria-label="Filtrar decisiones">
+          <button type="button" data-result="all" class="chip active">Todas</button>
+          <button type="button" data-result="allow" class="chip">Aprobadas</button>
+          <button type="button" data-result="deny" class="chip">Rechazadas</button>
+          <button type="button" data-result="none" class="chip">Sin respuesta</button>
+        </div>
+      </div>
+      <div class="table-wrap"><table id="decisions"></table></div>
+    </section>
+
+    <section>
+      <h2>Eventos</h2>
+      <div class="table-wrap"><table id="events"></table></div>
+    </section>
+  </main>
+
+  <footer class="muted small">
+    Solo lectura · fuentes: state/gate_state.json y logs/gate_audit.log · día de trading = 16:00 a 16:00 hora de Chicago ·
+    solo muestra lo que el gate de Python registró (los rechazos locales de NT8 por timeout o desconexión quedan en la ventana Output de NinjaTrader).
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

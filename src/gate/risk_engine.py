@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import zoneinfo
 
 from src.gate.config import GateConfig, AccountPreset
+from src.gate.rules import liquidation_floor, payout_progress, trading_day_for
 from src.gate.state_store import StateStore
 
 logger = logging.getLogger("gate.risk_engine")
@@ -166,9 +167,7 @@ class RiskEngine:
     # ------------------------------------------------------------------
     def trading_day_label(self, moment: datetime) -> date:
         """Fecha en la que cierra el dia de trading que contiene `moment` (corte 16:00 CT = 17:00 ET)."""
-        local = moment.astimezone(self.cme_tz)
-        rollover = time.fromisoformat(self.config.session.trading_day_rollover)
-        return local.date() + timedelta(days=1) if local.time() >= rollover else local.date()
+        return trading_day_for(moment, self.cme_tz, time.fromisoformat(self.config.session.trading_day_rollover))
 
     def _roll_day_if_needed(self, acc: AccountState, moment: Optional[datetime]) -> Optional[date]:
         label = self.trading_day_label(moment or datetime.now(self.cme_tz))
@@ -270,44 +269,20 @@ class RiskEngine:
         if not preset.is_funded_like:
             return {"account": account_name, "phase": preset.phase, "payout_applicable": False}
 
-        is_today_qualifying = self._is_today_qualifying(acc)
-        qualified_days = len(acc.qualifying_days_history) + (1 if is_today_qualifying else 0)
-        has_min_days = qualified_days >= preset.min_profit_days_required
-        target = preset.balance_for_payout
-        payout_configured = target is not None
-        has_balance = self._has_balance_for_payout(acc)
-        eligible = payout_configured and has_min_days and has_balance
-
-        if not payout_configured:
-            mode = "payout_not_configured"
-        elif eligible:
-            mode = "eligible"
-        elif has_balance:
-            mode = "qualify_days"
-        else:
-            mode = "accumulate_balance"
-
+        progress = payout_progress(
+            preset, acc.current_balance, acc.realized_pnl_today, len(acc.qualifying_days_history)
+        )
         return {
             "account": account_name,
             "phase": preset.phase,
             "payout_applicable": True,
-            "payout_configured": payout_configured,
-            "mode": mode,
             "current_balance": acc.current_balance,
             "initial_balance": preset.initial_balance,
             "buffer": preset.buffer,
             "payout": preset.payout,
-            "balance_for_payout": target,
-            "balance_remaining": max(0.0, target - acc.current_balance) if payout_configured else None,
             "realized_pnl_today": acc.realized_pnl_today,
             "min_profit_day_amount": preset.min_profit_day_amount,
-            "qualified_days_count": qualified_days,
-            "required_qualifying_days": preset.min_profit_days_required,
-            "days_remaining": max(0, preset.min_profit_days_required - qualified_days),
-            "is_today_qualifying": is_today_qualifying,
-            "has_min_days": has_min_days,
-            "has_balance_for_payout": has_balance,
-            "is_payout_eligible": eligible,
+            **progress,
         }
 
     def get_account_state(self, account_name: str) -> Optional[AccountState]:
@@ -493,13 +468,7 @@ class RiskEngine:
 
         # 5. Drawdown EOD y piso de liquidación (Criterio 9)
         current_equity = acc.current_balance + acc.unrealized_pnl
-        trailing_floor = acc.eod_hwm - preset.max_loss_limit
-        if preset.is_funded_like:
-            # Funded/Payout: el trailing sube con el HWM pero se detiene en min_account_balance (piso final).
-            effective_floor = min(trailing_floor, preset.min_account_balance)
-        else:
-            # Eval: min_account_balance es el piso inicial; el trailing EOD lo sube.
-            effective_floor = max(preset.min_account_balance, trailing_floor)
+        effective_floor = liquidation_floor(preset, acc.eod_hwm)
 
         if current_equity <= effective_floor:
             return AuthResponse(
