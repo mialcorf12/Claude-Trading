@@ -1,4 +1,5 @@
 """Tests del servidor HTTP del dashboard (solo lectura, lista blanca de rutas, validacion de filtros)."""
+import http.client
 import json
 from pathlib import Path
 import tempfile
@@ -23,6 +24,128 @@ class TestParseFilters(unittest.TestCase):
         for query in ("day=2026-13-99x", "day=ayer", "account=" + "a" * 100, "account=%3Cscript%3E"):
             with self.assertRaises(ValueError, msg=query):
                 parse_filters(query)
+
+
+class FakeLauncher:
+    def __init__(self):
+        self.starts = 0
+
+    def start(self):
+        self.starts += 1
+        return {"ok": True, "status": "started", "pid": 99, "message": "Gate arrancado (PID 99)", "console_tail": []}
+
+
+class TestStartGateEndpoint(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        base = Path(cls.tmp.name)
+        cls.sources = DashboardSources(
+            state_path=base / "s.json", audit_path=base / "a.log", config=load_config("config/lucid_rules.yaml"),
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def run_server(self, host="127.0.0.1", launcher="default"):
+        self.launcher = FakeLauncher() if launcher == "default" else launcher
+        server = create_server(self.sources, host, 0, launcher=self.launcher)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close()))
+        return server
+
+    def post(self, server, token="__ok__", host_header=None, origin=None, path="/api/gate/start"):
+        port = server.server_address[1]
+        headers = {"Host": host_header or f"127.0.0.1:{port}"}
+        if token is not None:
+            headers["X-Dashboard-Token"] = server.csrf_token if token == "__ok__" else token
+        if origin is not None:
+            headers["Origin"] = origin
+        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        connection.request("POST", path, body=b"", headers=headers)
+        response = connection.getresponse()
+        body = response.read()
+        connection.close()
+        return response.status, json.loads(body)
+
+    def overview_meta(self, server):
+        port = server.server_address[1]
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/overview", timeout=5) as response:
+            return json.loads(response.read())["meta"]
+
+    def test_valid_request_starts_the_gate(self):
+        server = self.run_server()
+        status, body = self.post(server)
+        self.assertEqual((status, body["status"]), (200, "started"))
+        self.assertEqual(self.launcher.starts, 1)
+
+    def test_missing_or_wrong_token_is_forbidden(self):
+        server = self.run_server()
+        for token in (None, "", "adivinando"):
+            self.assertEqual(self.post(server, token=token)[0], 403, repr(token))
+        self.assertEqual(self.launcher.starts, 0)
+
+    def test_dns_rebinding_host_is_forbidden(self):
+        server = self.run_server()
+        status, _ = self.post(server, host_header="evil.example.com")
+        self.assertEqual(status, 403)
+        self.assertEqual(self.launcher.starts, 0)
+
+    def test_cross_origin_request_is_forbidden(self):
+        server = self.run_server()
+        status, _ = self.post(server, origin="http://evil.example.com")
+        self.assertEqual(status, 403)
+        self.assertEqual(self.launcher.starts, 0)
+
+    def test_same_origin_request_is_accepted(self):
+        server = self.run_server()
+        port = server.server_address[1]
+        self.assertEqual(self.post(server, origin=f"http://127.0.0.1:{port}")[0], 200)
+
+    def test_start_is_disabled_when_the_dashboard_listens_beyond_loopback(self):
+        server = self.run_server(host="0.0.0.0")
+        status, _ = self.post(server)
+        self.assertEqual(status, 403)
+        self.assertEqual(self.launcher.starts, 0)
+        self.assertFalse(self.overview_meta(server)["start_enabled"])
+
+    def test_start_is_disabled_without_a_launcher(self):
+        server = self.run_server(launcher=None)
+        self.assertEqual(self.post(server)[0], 403)
+        self.assertFalse(self.overview_meta(server)["start_enabled"])
+
+    def test_overview_meta_exposes_token_and_flag_only_when_enabled(self):
+        server = self.run_server()
+        meta = self.overview_meta(server)
+        self.assertTrue(meta["start_enabled"])
+        self.assertEqual(meta["csrf_token"], server.csrf_token)
+
+    def test_loopback_server_rejects_foreign_host_on_get_too(self):
+        server = self.run_server()
+        port = server.server_address[1]
+        for path in ("/api/overview", "/"):
+            request = urllib.request.Request(f"http://127.0.0.1:{port}{path}", headers={"Host": "evil.example.com"})
+            with self.assertRaises(urllib.error.HTTPError, msg=path) as ctx:
+                urllib.request.urlopen(request, timeout=5)
+            self.assertEqual(ctx.exception.code, 403, path)
+
+    def test_non_loopback_server_does_not_enforce_host(self):
+        server = self.run_server(host="0.0.0.0")
+        port = server.server_address[1]
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/api/overview", headers={"Host": "10.0.0.5:8780"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+
+    def test_get_on_the_start_path_is_405_and_other_posts_stay_405(self):
+        server = self.run_server()
+        port = server.server_address[1]
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/api/gate/start", timeout=5)
+        self.assertEqual(ctx.exception.code, 405)
+        self.assertEqual(self.post(server, path="/api/overview")[0], 405)
+        self.assertEqual(self.launcher.starts, 0)
 
 
 class TestDashboardHttp(unittest.TestCase):

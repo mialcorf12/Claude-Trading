@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 from src.dashboard.data import DashboardSources
+from src.dashboard.launcher import GateLauncher
 from src.dashboard.server import create_server
 from src.gate.config import load_config
 
@@ -14,6 +15,7 @@ def main() -> None:
     parser.add_argument("--config", default="config/lucid_rules.yaml")
     parser.add_argument("--host", default="127.0.0.1", help="Por defecto solo local. 0.0.0.0 expone el dashboard SIN autenticacion")
     parser.add_argument("--port", type=int, default=8780)
+    parser.add_argument("--disable-start", action="store_true", help="Oculta/inhabilita el boton para arrancar el gate")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
@@ -22,8 +24,15 @@ def main() -> None:
         state_path=Path(config.server.state_path),
         audit_path=Path(config.server.audit_log_path),
         config=config,
+        gate_address=(config.server.host, config.server.port),
     )
-    server = create_server(sources, args.host, args.port)
+    launcher = None
+    if not args.disable_start:
+        launcher = GateLauncher(
+            config_path=str(Path(args.config).resolve()), console_log=Path("logs/gate_console.log"),
+            host=config.server.host, port=config.server.port,
+        )
+    server = create_server(sources, args.host, args.port, launcher=launcher)
 
     logging.info("Dashboard en http://%s:%d  (estado: %s | auditoria: %s)", args.host, args.port,
                  sources.state_path.resolve(), sources.audit_path.resolve())

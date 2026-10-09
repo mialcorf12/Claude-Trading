@@ -11,6 +11,7 @@ from datetime import date, datetime, time
 import json
 import math
 from pathlib import Path
+import socket
 from typing import Any, Dict, List, Optional, Tuple
 import zoneinfo
 
@@ -31,6 +32,17 @@ class DashboardSources:
     audit_path: Path
     config: GateConfig
     max_log_bytes: int = DEFAULT_MAX_LOG_BYTES
+    gate_address: Optional[Tuple[str, int]] = None  # (host, puerto) del gate para saber si realmente escucha
+
+
+def probe_port(host: str, port: int, timeout: float = 0.25) -> bool:
+    """True si algo acepta conexiones TCP en host:port (el gate escucha)."""
+    target = "127.0.0.1" if host in ("", "0.0.0.0") else host
+    try:
+        with socket.create_connection((target, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
 
 
 # ----------------------------------------------------------------------
@@ -329,6 +341,13 @@ def build_overview(
 
     gate = gate_status(records, now)
     gate["last_event_at"] = _iso(gate["last_event_at"])
+    # El puerto manda sobre el log: un gate caido no escribe SERVER_STOP y uno iniciado aparte puede tener otro log
+    gate["listening"] = probe_port(*sources.gate_address) if sources.gate_address else None
+    if gate["listening"] is True:
+        gate["status"] = "running"
+    elif gate["listening"] is False:
+        gate["status"] = "stopped"
+        gate["connected_clients"] = 0
 
     event_counts = Counter(e["event"] for e in events_f)
     return {

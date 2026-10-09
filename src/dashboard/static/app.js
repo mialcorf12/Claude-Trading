@@ -18,8 +18,9 @@ const els = {
   accounts: document.getElementById("accounts"), closed: document.getElementById("closed-days"),
   decisions: document.getElementById("decisions"), events: document.getElementById("events"),
   chips: document.getElementById("decision-chips"),
+  start: document.getElementById("btn-start"), notice: document.getElementById("notice"),
 };
-const state = { data: null, result: "all", countdown: REFRESH_SECONDS, loading: false, updatedAt: null };
+const state = { data: null, result: "all", countdown: REFRESH_SECONDS, loading: false, updatedAt: null, csrf: null };
 
 // ---------- helpers (todo el texto dinamico entra por textContent, nunca por innerHTML) ----------
 function h(tag, attrs, ...children) {
@@ -63,6 +64,35 @@ function meter(label, valueText, fraction, tone) {
 }
 
 // ---------- render ----------
+function renderStart(data) {
+  // Solo se ofrece cuando el dashboard puede lanzarlo (loopback) y el puerto del gate realmente no escucha
+  state.csrf = data.meta.csrf_token || null;
+  els.start.hidden = !(data.meta.start_enabled && data.gate.listening === false);
+}
+
+function showNotice(message, tail, isError) {
+  els.notice.className = "banner notice" + (isError ? " error" : "");
+  els.notice.replaceChildren(h("div", {}, message), tail && tail.length ? h("pre", {}, tail.join("\n")) : null);
+  els.notice.hidden = false;
+}
+
+async function startGate() {
+  if (!state.csrf || !confirm("¿Arrancar el gate de autorización de Python en este servidor?")) return;
+  els.start.disabled = true;
+  els.start.textContent = "Arrancando…";
+  try {
+    const response = await fetch("/api/gate/start", { method: "POST", headers: { "X-Dashboard-Token": state.csrf } });
+    const result = await response.json();
+    showNotice(result.message || "Sin respuesta", result.console_tail, !result.ok);
+  } catch (error) {
+    showNotice("No se pudo contactar al dashboard: " + error.message, null, true);
+  } finally {
+    els.start.disabled = false;
+    els.start.textContent = "Arrancar gate";
+    await load();
+  }
+}
+
 function renderPill(gate) {
   const map = { running: ["pill-ok", "Gate en línea"], stopped: ["pill-danger", "Gate detenido"],
                 unknown: ["pill-warn", "Estado desconocido"], no_data: ["pill-muted", "Sin datos de auditoría"] };
@@ -178,6 +208,7 @@ function render(data) {
   fillSelect(els.account, data.meta.accounts, data.meta.filters.account || els.account.value, "Todas");
   fillSelect(els.day, data.meta.days, data.meta.filters.day || els.day.value, "Todos");
   renderPill(data.gate);
+  renderStart(data);
   renderKpis(data);
   els.accounts.replaceChildren(...(data.accounts.length ? data.accounts.map(renderAccount)
     : [h("div", { class: "empty" }, data.meta.state_file_found ? "Sin cuentas para este filtro." : "Aún no existe state/gate_state.json (se crea cuando NT8 reporta la primera cuenta).")]));
@@ -227,6 +258,7 @@ setInterval(() => {
 }, 1000);
 
 els.refresh.addEventListener("click", load);
+els.start.addEventListener("click", startGate);
 els.account.addEventListener("change", load);
 els.day.addEventListener("change", load);
 els.auto.addEventListener("change", () => { localStorage.setItem("gate-dashboard-auto", els.auto.checked ? "1" : "0"); state.countdown = REFRESH_SECONDS; tick(); });

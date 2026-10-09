@@ -6,7 +6,9 @@ import tempfile
 import unittest
 import zoneinfo
 
-from src.dashboard.data import DashboardSources, build_overview, read_audit
+import socket
+
+from src.dashboard.data import DashboardSources, build_overview, probe_port, read_audit
 from src.gate.config import load_config
 
 CT = zoneinfo.ZoneInfo("America/Chicago")
@@ -166,6 +168,47 @@ class TestGateStatusAndEvents(DashboardDataBase):
         self.assertEqual({e["event"] for e in events}, {"TELEMETRY_RECEIVED", "COMMAND_BROADCAST"})
         telemetry = next(e for e in events if e["event"] == "TELEMETRY_RECEIVED")
         self.assertIn("25150", telemetry["detail"])
+
+
+class TestGateStatusFromPort(DashboardDataBase):
+    """El estado en linea se decide por el puerto del gate, no solo por el log (un gate caido no escribe SERVER_STOP)."""
+
+    def with_address(self, port):
+        self.sources = DashboardSources(
+            state_path=self.sources.state_path, audit_path=self.sources.audit_path,
+            config=self.config, gate_address=("127.0.0.1", port),
+        )
+
+    def free_port(self):
+        with socket.socket() as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+    def test_probe_port(self):
+        with socket.socket() as server:
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            self.assertTrue(probe_port("127.0.0.1", server.getsockname()[1]))
+        self.assertFalse(probe_port("127.0.0.1", self.free_port()))
+
+    def test_crashed_gate_is_reported_stopped_even_if_the_log_says_running(self):
+        self.write_audit([rec(stamp(8, 8), "SERVER_START"), rec(stamp(8, 8, 5), "CLIENT_CONNECTED", peer="a")])
+        self.with_address(self.free_port())
+        gate = self.overview()["gate"]
+        self.assertEqual((gate["status"], gate["listening"], gate["connected_clients"]), ("stopped", False, 0))
+
+    def test_listening_gate_is_running_even_without_log_data(self):
+        with socket.socket() as server:
+            server.bind(("127.0.0.1", 0))
+            server.listen()
+            self.with_address(server.getsockname()[1])
+            gate = self.overview()["gate"]
+        self.assertEqual((gate["status"], gate["listening"]), ("running", True))
+
+    def test_without_address_it_falls_back_to_the_log(self):
+        self.write_audit([rec(stamp(8, 8), "SERVER_START")])
+        gate = self.overview()["gate"]
+        self.assertEqual((gate["status"], gate["listening"]), ("running", None))
 
 
 class TestAccountMetrics(DashboardDataBase):

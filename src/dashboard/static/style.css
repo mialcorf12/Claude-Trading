@@ -30,6 +30,13 @@ button:focus-visible, select:focus-visible { outline: 2px solid var(--info); out
 
 .banner { margin: 10px 20px 0; padding: 10px 14px; border-radius: 8px; background: var(--danger-bg); color: var(--danger); border: 1px solid #f0c4be; }
 
+.btn-primary { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+.btn-primary:hover { background: #17753f; }
+.btn-primary:disabled { opacity: .6; cursor: progress; }
+.banner.notice { background: var(--info-bg); color: var(--info); border-color: #c5d6f7; }
+.banner.notice.error { background: var(--danger-bg); color: var(--danger); border-color: #f0c4be; }
+.banner pre { margin: 6px 0 0; white-space: pre-wrap; font: 12px/1.4 ui-monospace, Consolas, monospace; color: var(--text); }
+
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
 .kpi, .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
 .kpi .label { font-size: 12px; color: var(--muted); }

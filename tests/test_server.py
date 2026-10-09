@@ -104,6 +104,33 @@ class TestGateServer(unittest.IsolatedAsyncioTestCase):
             if msg.get("type") != "HEARTBEAT":
                 return msg
 
+    def audit_events(self):
+        path = Path(self.config.server.audit_log_path)
+        return [json.loads(line)["event"] for line in path.read_text(encoding="utf-8").splitlines()]
+
+    async def test_silent_connections_such_as_health_probes_are_not_logged(self):
+        # El dashboard sondea el puerto abriendo y cerrando la conexion: no debe ensuciar la auditoria
+        _, writer = await asyncio.open_connection("127.0.0.1", 9876)
+        writer.close()
+        await writer.wait_closed()
+        await asyncio.sleep(0.1)
+        events = self.audit_events()
+        self.assertNotIn("CLIENT_CONNECTED", events)
+        self.assertNotIn("CLIENT_DISCONNECTED", events)
+
+    async def test_real_client_is_logged_on_its_first_message(self):
+        reader, writer = await asyncio.open_connection("127.0.0.1", 9876)
+        writer.write(encode_message({"type": "HEARTBEAT"}))
+        await writer.drain()
+        await reader.readline()
+        writer.close()
+        await writer.wait_closed()
+        await asyncio.sleep(0.1)
+        events = self.audit_events()
+        self.assertIn("CLIENT_CONNECTED", events)
+        self.assertIn("CLIENT_DISCONNECTED", events)
+        self.assertLess(events.index("CLIENT_CONNECTED"), events.index("CLIENT_DISCONNECTED"))
+
     async def test_telemetry_with_balance_only_derives_daily_pnl_over_the_wire(self):
         reader, writer = await asyncio.open_connection("127.0.0.1", 9876)
         # Formato que envia NT8: balance y unrealized, sin realized_pnl_today

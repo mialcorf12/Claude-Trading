@@ -197,13 +197,16 @@ class GateServer:
             self.client_tasks.add(curr_task)
 
         peer = writer.get_extra_info("peername")
-        logger.info("Cliente conectado desde %s", peer)
+        announced = False  # se anuncia al llegar el primer mensaje: asi las sondas TCP del dashboard no ensucian logs
         self.connected_clients.add(writer)
-        self.audit.log_event("CLIENT_CONNECTED", {"peer": str(peer)})
 
         try:
             while self._running:
                 line_bytes = await reader.readline()
+                if line_bytes and not announced:
+                    announced = True
+                    logger.info("Cliente conectado desde %s", peer)
+                    self.audit.log_event("CLIENT_CONNECTED", {"peer": str(peer)})
                 if not line_bytes:
                     break  # Conexión cerrada
 
@@ -228,8 +231,9 @@ class GateServer:
                 writer.close()
             except Exception:
                 pass
-            logger.info("Cliente desconectado: %s", peer)
-            self.audit.log_event("CLIENT_DISCONNECTED", {"peer": str(peer)})
+            if announced:
+                logger.info("Cliente desconectado: %s", peer)
+                self.audit.log_event("CLIENT_DISCONNECTED", {"peer": str(peer)})
 
     async def _process_message(self, msg: dict, writer: asyncio.StreamWriter) -> None:
         msg_type = msg.get("type")

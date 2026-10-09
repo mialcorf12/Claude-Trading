@@ -95,11 +95,12 @@ Origen: aclaraciones del usuario (operador en Costa Rica, UTC-6 fijo; Chicago us
   - **Cambios derivados (C#):** el FLATTEN se ejecuta con `TriggerCustomEvent` (documentación NT8: no enviar órdenes desde otro hilo), solo si la cuenta coincide, y se eliminó `isFlattenedLocally` (nunca se limpiaba; Python decide las entradas).
   - **Verificación:** 127 tests OK (RED previo: 12 errores + 1 fallo). C# sin compilar en este entorno: requiere F5 en NT8.
 
-- [ ] **TASK-12 (commit 2): Botón "Arrancar gate" en el dashboard**
+- [x] **TASK-12 (commit 2): Botón "Arrancar gate" en el dashboard**
   - **Ruta:** Inline.
   - **Archivos:** `src/dashboard/launcher.py`, `src/dashboard/server.py`, `src/dashboard/main.py`, `src/dashboard/data.py`, `src/dashboard/static/*`, tests, runbook
   - **Descripción:** `POST /api/gate/start` lanza el gate como proceso independiente (log en `logs/gate_console.log`). Protección CSRF/DNS-rebinding: token por proceso + validación de Host/Origin; solo habilitado en loopback. Estado "en línea" = puerto del gate ocupado (no depende del log).
-  - **Verificación:** tests del launcher (inyectables) y del endpoint HTTP; prueba real arrancando el gate desde la API.
+  - **Cambios derivados:** estado "en línea" por sonda de puerto (corrige gate caído sin `SERVER_STOP`); validación de `Host` también en GET en loopback (el token viaja en `/api/overview`); el gate anuncia `CLIENT_CONNECTED` con el primer mensaje, para que la sonda no ensucie la auditoría.
+  - **Verificación:** 153 tests OK (incluye arranque real de un gate en puerto libre) + prueba de punta a punta con Chrome headless (botón visible/oculto) y API (403 sin token y con Host ajeno, arranque, idempotencia). **No verificado:** el clic real en el navegador (`confirm()` y `fetch` del botón) — sin automatización de navegador disponible; sí se verificó el render y todo el endpoint.
 
 ## Verificación y Cierre
 - Cobertura de pruebas unitarias e integración en Python.

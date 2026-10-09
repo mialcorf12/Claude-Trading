@@ -165,6 +165,7 @@ Abre **http://127.0.0.1:8780** en el navegador del VPS (por RDP). Opciones: `--p
 - **Resumen:** estado del gate, decisiones aprobadas/rechazadas, tasa de aprobacion, latencia de decision, motivos de rechazo.
 - **Cuentas (snapshot actual):** colchon de drawdown, DLL restante, progreso al profit target (Eval) o al payout y dias calificados (Funded/Payout). Estados: En orden / Atencion (colchon < 30% del max loss o DLL usado >= 70%) / Critico.
 - **Dias cerrados, decisiones y eventos** con filtros por cuenta y dia.
+- **Estado del gate = puerto:** "Gate en linea/detenido" se decide probando el puerto del gate (`server.port`), no solo el log, asi que un gate caido sin `SERVER_STOP` se ve como detenido.
 - **Limite:** solo ve lo que Python registro. Los rechazos locales de NT8 (timeout, socket caido) quedan en la ventana Output de NinjaTrader.
 - **Seguridad:** no tiene autenticacion. Por defecto escucha solo en `127.0.0.1`; si usas `--host 0.0.0.0`, restringelo por firewall/VPN.
 - **Arranque automatico (opcional):** crea una segunda tarea programada igual a la del gate (seccion 4) con el argumento `-m src.dashboard.main --config config/lucid_rules.yaml`.
@@ -178,3 +179,15 @@ Abre **http://127.0.0.1:8780** en el navegador del VPS (por RDP). Opciones: `--p
 - **NT8:** el FLATTEN solo lo ejecuta la estrategia cuya cuenta coincide, y se envia al hilo de la estrategia (`TriggerCustomEvent`). Requiere recompilar con F5.
 - **Consistencia de Eval:** el tope diario es `max(c x profit_target, c/(1-c) x profit_acumulado_al_inicio_del_dia)`. Con c = 50%: el primer dia el tope es 50% del target (25K: $625); despues sube hasta igualar lo acumulado (con $900 acumulados, hasta $900). Al alcanzarlo el gate **bloquea las entradas del dia y manda FLATTEN** (`reason: CONSISTENCY_CAP`); se libera al cerrar el dia (16:00 CT).
 - El piso del 50% del target evita bloquear el primer dia (con 0 acumulado, "50% del acumulado" seria 0). Es conservador: nunca permite romper la consistencia al alcanzar el target.
+
+---
+
+## 10. Boton "Arrancar gate" en el dashboard
+
+- Aparece junto al estado **solo cuando el gate no esta escuchando**; pide confirmacion y lanza `python -m src.gate.main --config <tu config>` como **proceso independiente** (sigue vivo aunque cierres el dashboard). Espera hasta 10 s a que el puerto del gate abra y muestra el resultado; si falla, muestra el final de la consola.
+- La salida del gate queda en **`logs/gate_console.log`** (se agrega en cada arranque). El gate sigue escribiendo su auditoria en `logs/gate_audit.log`.
+- Un segundo clic (o dos personas a la vez) no duplica el proceso: responde "ya esta en linea" o "arranque en curso".
+- **Solo hay boton de arranque** (no de parada). Para detener el gate, cierra su proceso/consola o usa Ctrl+C si lo lanzaste a mano.
+- **Seguridad** (es el unico endpoint que ejecuta algo): solo funciona con el dashboard en `127.0.0.1`; exige un token por proceso, `Host` propio y mismo origen (defensa contra CSRF y DNS-rebinding). Con `--host 0.0.0.0` el boton se desactiva. Para quitarlo del todo: `--disable-start`.
+- **Conviene** que el gate lo siga lanzando la tarea programada de Windows (seccion 4) en el arranque del VPS; el boton es para levantarlo a mano si se cae. No lo uses si ya hay un gate corriendo en otro puerto de la config.
+- Una conexion TCP sin mensajes (como la sonda del dashboard) ya no aparece como `CLIENT_CONNECTED` en la auditoria: un cliente se registra con su primer mensaje.
