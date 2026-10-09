@@ -66,6 +66,28 @@ class TestGateConfig(unittest.TestCase):
             self.assertEqual((preset.buffer, preset.payout), (buffer, payout))
             self.assertEqual(preset.balance_for_payout, balance_for_payout)
 
+    def test_flex_payout_presets_match_rules_workbook(self):
+        # Rules/Lucid.xlsx, columnas FLEX PAYOUT (fase posterior al primer retiro)
+        expected = {
+            # nombre: (initial, buffer, payout, balance_for_payout, max_loss, dll, min_balance, mini, micro, dia_min)
+            "25k_flex_payout": (25000.0, 1100.0, 2000.0, 28100.0, 1000.0, 600.0, 25100.0, 2, 20, 100.0),
+            "50k_flex_payout": (50000.0, 2100.0, 4000.0, 56100.0, 2000.0, 1200.0, 50100.0, 4, 40, 150.0),
+            "100k_flex_payout": (100000.0, 3100.0, 6000.0, 109100.0, 3000.0, 1800.0, 100100.0, 6, 60, 200.0),
+        }
+        config = load_config(self.config_path)
+        for name, (initial, buffer, payout, bfp, mll, dll, min_bal, mini, micro, day_min) in expected.items():
+            preset = config.presets[name]
+            self.assertEqual(preset.phase, "payout")
+            self.assertEqual(
+                (preset.initial_balance, preset.buffer, preset.payout, preset.balance_for_payout),
+                (initial, buffer, payout, bfp),
+            )
+            self.assertEqual((preset.max_loss_limit, preset.daily_loss_limit, preset.min_account_balance), (mll, dll, min_bal))
+            self.assertEqual((preset.max_contracts_mini, preset.max_contracts_micro), (mini, micro))
+            self.assertEqual(preset.min_profit_day_amount, day_min)
+            self.assertEqual(preset.min_profit_days_required, 5)
+            self.assertTrue(preset.is_funded_like)
+
     def test_balance_for_payout_is_derived_from_initial_buffer_and_payout(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "funded.yaml"

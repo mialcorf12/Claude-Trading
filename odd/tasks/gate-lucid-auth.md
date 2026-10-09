@@ -58,8 +58,23 @@ Origen: aclaraciones del usuario (operador en Costa Rica, UTC-6 fijo; Chicago us
   - **Archivos:** `config/lucid_rules.yaml`, `src/gate/config.py`, `src/gate/risk_engine.py`, `tests/test_config.py`, `tests/test_risk_engine.py`
   - **Descripción:** Campos `buffer`, `payout` y `balance_for_payout` (= initial_balance + buffer + payout, derivado). `min_account_balance` en funded = piso de liquidación (tope del trailing), no balance de retiro. Bloqueo del día calificado solo después de alcanzar `balance_for_payout` y mientras falten días calificados. `get_payout_status` valida contra `balance_for_payout`.
   - **Datos:** `buffer`/`payout` tomados de `Rules/Lucid.xlsx` (FLEX FUNDED): 25K 1.100/1.000, 50K 2.100/2.000, 100K 3.100/3.000 -> balance_for_payout 27.100 / 54.100 / 106.100. Si faltan, el gate no aplica lógica de payout y avisa al cargar.
-  - **Pendiente:** el workbook trae además columnas "FLEX PAYOUT" (fase posterior al primer payout; payout mayor); sin presets todavía.
+  - **Nota:** las columnas "FLEX PAYOUT" del workbook se modelaron en TASK-08.
   - **Verificación:** tests unitarios de ambas fases (acumular balance / calificar días), piso funded y elegibilidad.
+
+## Cambios aceptados (2026-10-09, segunda ronda)
+
+- [x] **TASK-08: Presets FLEX PAYOUT (fase posterior al primer retiro)**
+  - **Ruta:** Inline (continuación del mismo código ya mapeado).
+  - **Archivos:** `config/lucid_rules.yaml`, `src/gate/config.py`, `src/gate/risk_engine.py`, `tests/test_config.py`, `tests/test_risk_engine.py`
+  - **Descripción:** Presets `25k/50k/100k_flex_payout` con los datos de `Rules/Lucid.xlsx` (columnas FLEX PAYOUT). Nueva fase `payout`, tratada como funded en piso de liquidación, bloqueo del día calificado y elegibilidad (`is_funded_like`).
+  - **Verificación:** `python3 -m unittest discover tests` (53 OK, RED previo con 6 errores). Presets cargados desde el workbook: payout 2.000/4.000/6.000 -> balance_for_payout 28.100/56.100/109.100.
+
+- [ ] **TASK-09: Cierre automático del día de trading (`record_closed_day`)**
+  - **Ruta:** Inline.
+  - **Archivos:** `src/gate/risk_engine.py`, `src/gate/state_store.py`, `src/gate/server.py`, `src/gate/main.py`, `src/gate/config.py`, `config/lucid_rules.yaml`, `ninjatrader/Custom/Strategies/AuthorizedStrategyBase.cs`, `tests/test_trading_day.py`, `docs/RUNBOOK_VPS_WINDOWS.md`
+  - **Descripción:** Día de trading = 16:00 CT a 16:00 CT (rollover configurable `session.trading_day_rollover`). Python calcula el PnL del día como `balance - day_start_balance` (NT8 envía CashValue), cierra el día al cruzar el rollover (tick periódico + al autorizar), llama `record_closed_day`, resetea PnL diario/flatten, actualiza HWM, y persiste el estado en JSON para sobrevivir reinicios.
+  - **Supuesto a confirmar:** el día de Lucid cierra a las 16:00 CT (17:00 ET, liquidación CME).
+  - **Verificación:** tests de rollover, baseline, persistencia y tick del servidor.
 
 ## Verificación y Cierre
 - Cobertura de pruebas unitarias e integración en Python.

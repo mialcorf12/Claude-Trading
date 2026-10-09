@@ -43,7 +43,7 @@ class InstrumentConfig:
 @dataclass(frozen=True)
 class AccountPreset:
     tier: str
-    phase: Literal["eval", "funded"]
+    phase: Literal["eval", "funded", "payout"]
     initial_balance: float
     profit_target: Optional[float]
     daily_loss_limit: float
@@ -68,6 +68,11 @@ class AccountPreset:
     # Solo Funded: balance_for_payout = initial_balance + buffer + payout
     buffer: Optional[float] = None
     payout: Optional[float] = None
+
+    @property
+    def is_funded_like(self) -> bool:
+        """Funded y la fase posterior al primer retiro (payout) comparten piso, bloqueo de dia y elegibilidad."""
+        return self.phase in ("funded", "payout")
 
     @property
     def balance_for_payout(self) -> Optional[float]:
@@ -167,9 +172,9 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
             buffer=float(pdata["buffer"]) if pdata.get("buffer") is not None else None,
             payout=float(pdata["payout"]) if pdata.get("payout") is not None else None,
         )
-        if presets[pid].phase == "funded" and presets[pid].balance_for_payout is None:
+        if presets[pid].is_funded_like and presets[pid].balance_for_payout is None:
             logger.warning(
-                "Preset '%s' (funded) sin 'buffer'/'payout': balance_for_payout no definido, "
+                "Preset '%s' (funded/payout) sin 'buffer'/'payout': balance_for_payout no definido, "
                 "el gate no aplicara la logica de payout hasta configurarlos.", pid
             )
 

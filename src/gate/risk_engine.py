@@ -97,7 +97,7 @@ class RiskEngine:
             return False
         
         min_amount = acc.preset.min_profit_day_amount or 0.0
-        if acc.preset.phase == "funded" and day_profit >= min_amount and min_amount > 0:
+        if acc.preset.is_funded_like and day_profit >= min_amount and min_amount > 0:
             acc.qualifying_days_history.append(day_profit)
             logger.info(
                 "Cuenta %s: Dia calificado registrado ($%.2f >= $%.2f). Total calificados: %d/%d",
@@ -132,7 +132,7 @@ class RiskEngine:
             return {"error": f"Cuenta {account_name} no registrada"}
 
         preset = acc.preset
-        if preset.phase != "funded":
+        if not preset.is_funded_like:
             return {"account": account_name, "phase": preset.phase, "payout_applicable": False}
 
         is_today_qualifying = self._is_today_qualifying(acc)
@@ -342,8 +342,8 @@ class RiskEngine:
         # 5. Drawdown EOD y piso de liquidación (Criterio 9)
         current_equity = acc.current_balance + acc.unrealized_pnl
         trailing_floor = acc.eod_hwm - preset.max_loss_limit
-        if preset.phase == "funded":
-            # Funded: el trailing sube con el HWM pero se detiene en min_account_balance (piso final).
+        if preset.is_funded_like:
+            # Funded/Payout: el trailing sube con el HWM pero se detiene en min_account_balance (piso final).
             effective_floor = min(trailing_floor, preset.min_account_balance)
         else:
             # Eval: min_account_balance es el piso inicial; el trailing EOD lo sube.
@@ -388,7 +388,7 @@ class RiskEngine:
         # no se alcance. Una vez alcanzado, los dias restantes necesitan solo min_profit_day_amount: al
         # lograrlo se bloquea el dia para asegurarlo (mientras falten dias calificados historicos).
         if (
-            preset.phase == "funded"
+            preset.is_funded_like
             and preset.lock_day_after_qualifying_profit
             and preset.min_profit_day_amount
             and self._has_balance_for_payout(acc)

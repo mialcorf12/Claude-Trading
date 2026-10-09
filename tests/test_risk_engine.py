@@ -299,5 +299,62 @@ class TestFundedPayoutRules(unittest.TestCase):
         self.assertEqual(status["mode"], "payout_not_configured")
 
 
+class TestPayoutPhaseRules(unittest.TestCase):
+    """Fase FLEX PAYOUT 25K (posterior al primer retiro): buffer $1.100 + payout $2.000 -> balance_for_payout $28.100.
+
+    Misma mecanica que Funded: piso del trailing tope en min_account_balance y bloqueo del dia calificado.
+    """
+
+    ACCOUNT = "Payout_25K_01"
+
+    def setUp(self):
+        self.config = load_config("config/lucid_rules.yaml")
+        self.config.accounts[self.ACCOUNT] = "25k_flex_payout"
+        self.engine = RiskEngine(self.config)
+        self.engine.register_account(self.ACCOUNT, balance=25000.0)
+        self.when = ct(7, 10, 30)
+
+    def _telemetry(self, balance, pnl_today):
+        self.engine.update_telemetry(
+            TelemetryUpdate(
+                account=self.ACCOUNT, strategy_id="s",
+                current_balance=balance, realized_pnl_today=pnl_today, unrealized_pnl=0.0,
+            )
+        )
+
+    def _auth(self):
+        return self.engine.evaluate_authorization(make_req(account=self.ACCOUNT), current_time=self.when)
+
+    def test_account_is_not_liquidated_at_initial_balance(self):
+        self.assertTrue(self._auth().allow)
+
+    def test_trailing_floor_stops_at_min_account_balance(self):
+        self._telemetry(29000.0, 0.0)  # HWM 29.000: trail 28.000 > 25.100
+        self._telemetry(25100.0, 0.0)
+        breached = self._auth()
+        self.assertFalse(breached.allow)
+        self.assertIn("DRAWDOWN_LIMIT_BREACHED", breached.reason)
+
+    def test_no_day_lock_before_balance_for_payout(self):
+        self._telemetry(27000.0, 150.0)
+        self.assertTrue(self._auth().allow)
+
+    def test_day_locks_after_balance_for_payout_and_qualifying_profit(self):
+        self._telemetry(28150.0, 110.0)
+        res = self._auth()
+        self.assertFalse(res.allow)
+        self.assertIn("FUNDED_QUALIFYING_DAY_LOCKED", res.reason)
+
+    def test_payout_status_is_applicable_and_eligible_with_days_and_balance(self):
+        for day_profit in [105.0, 150.0, 120.0, 100.0]:
+            self.engine.record_closed_day(self.ACCOUNT, day_profit)
+        self._telemetry(28100.0, 110.0)
+        status = self.engine.get_payout_status(self.ACCOUNT)
+        self.assertTrue(status["payout_applicable"])
+        self.assertEqual(status["balance_for_payout"], 28100.0)
+        self.assertTrue(status["is_payout_eligible"])
+        self.assertEqual(status["mode"], "eligible")
+
+
 if __name__ == "__main__":
     unittest.main()

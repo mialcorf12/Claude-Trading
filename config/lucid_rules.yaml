@@ -162,6 +162,83 @@ presets:
     session_start_time: "08:30"            # 09:30 ET = 08:30 CT
     session_flatten_time: "14:55"
 
+  # ---------------------------------------------------------------------------
+  # FASE PAYOUT: cuenta Funded despues del primer retiro (Rules/Lucid.xlsx, columnas FLEX PAYOUT).
+  # Mismas reglas que Funded; cambia el payout (mayor) y por tanto balance_for_payout.
+  # balance_for_payout = initial_balance + buffer + payout
+  # ---------------------------------------------------------------------------
+  "25k_flex_payout":
+    tier: "25K"
+    phase: "payout"
+    initial_balance: 25000.0
+    profit_target: null
+    daily_loss_limit: 600.0
+    max_loss_limit: 1000.0
+    drawdown_type: "EOD"
+    consistency_cap_pct: null
+    min_account_balance: 25100.0     # Piso de liquidacion: el trailing deja de subir aqui
+    min_days_of_profit: "5 of $100"
+    min_profit_day_amount: 100.0
+    min_profit_days_required: 5
+    lock_day_after_qualifying_profit: true
+    buffer: 1100.0
+    payout: 2000.0
+    days_to_payout: 5
+    scaling_plan: true
+    max_contracts_mini: 2
+    max_contracts_micro: 20
+    min_trade_duration_seconds: 10.0
+    session_start_time: "08:30"
+    session_flatten_time: "14:55"
+
+  "50k_flex_payout":
+    tier: "50K"
+    phase: "payout"
+    initial_balance: 50000.0
+    profit_target: null
+    daily_loss_limit: 1200.0
+    max_loss_limit: 2000.0
+    drawdown_type: "EOD"
+    consistency_cap_pct: null
+    min_account_balance: 50100.0     # Piso de liquidacion: el trailing deja de subir aqui
+    min_days_of_profit: "5 of $150"
+    min_profit_day_amount: 150.0
+    min_profit_days_required: 5
+    lock_day_after_qualifying_profit: true
+    buffer: 2100.0
+    payout: 4000.0
+    days_to_payout: 5
+    scaling_plan: true
+    max_contracts_mini: 4
+    max_contracts_micro: 40
+    min_trade_duration_seconds: 10.0
+    session_start_time: "08:30"
+    session_flatten_time: "14:55"
+
+  "100k_flex_payout":
+    tier: "100K"
+    phase: "payout"
+    initial_balance: 100000.0
+    profit_target: null
+    daily_loss_limit: 1800.0
+    max_loss_limit: 3000.0
+    drawdown_type: "EOD"
+    consistency_cap_pct: null
+    min_account_balance: 100100.0     # Piso de liquidacion: el trailing deja de subir aqui
+    min_days_of_profit: "5 of $200"
+    min_profit_day_amount: 200.0
+    min_profit_days_required: 5
+    lock_day_after_qualifying_profit: true
+    buffer: 3100.0
+    payout: 6000.0
+    days_to_payout: 5
+    scaling_plan: true
+    max_contracts_mini: 6
+    max_contracts_micro: 60
+    min_trade_duration_seconds: 10.0
+    session_start_time: "08:30"
+    session_flatten_time: "14:55"
+
 # Mapeo de cuentas activas en NinjaTrader a sus presets de reglas
 accounts:
   "Sim101": "25k_flex_eval"
