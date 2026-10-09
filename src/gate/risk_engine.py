@@ -3,14 +3,17 @@ Evalua cada solicitud de orden contra las reglas de la cuenta (EOD Trailing DD, 
 limite de contratos, consistencia, horarios y stop obligatorio).
 """
 from dataclasses import dataclass, field
-from datetime import datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import zoneinfo
 
 from src.gate.config import GateConfig, AccountPreset
+from src.gate.state_store import StateStore
 
 logger = logging.getLogger("gate.risk_engine")
+
+MAX_CLOSED_DAYS_KEPT = 90  # historial de dias cerrados que se conserva por cuenta
 
 
 @dataclass
@@ -65,14 +68,19 @@ class AccountState:
     is_flattened: bool = False
     is_paused: bool = False
     qualifying_days_history: List[float] = field(default_factory=list)
+    trading_day: Optional[date] = None  # Etiqueta del dia de trading en curso (fecha en que cierra, 16:00 CT)
+    baseline_set: bool = False  # True cuando day_start_balance/eod_hwm vienen de un balance real o del estado persistido
+    closed_days: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class RiskEngine:
-    def __init__(self, config: GateConfig):
+    def __init__(self, config: GateConfig, state_store: Optional[StateStore] = None):
         self.config = config
         self.accounts: Dict[str, AccountState] = {}
         self.strategy_paused: Dict[str, bool] = {}
         self.cme_tz = zoneinfo.ZoneInfo(config.session.timezone)
+        self.store = state_store
+        self._persisted: Dict[str, Any] = state_store.load() if state_store else {}
 
     def register_account(self, account_name: str, balance: Optional[float] = None) -> AccountState:
         preset = self.config.get_preset_for_account(account_name)
@@ -86,9 +94,135 @@ class RiskEngine:
             current_balance=init_bal,
             day_start_balance=init_bal,
             eod_hwm=init_bal,
+            baseline_set=balance is not None,
         )
+        self._restore_state(state)
         self.accounts[account_name] = state
+        self._persist()
         return state
+
+    # ------------------------------------------------------------------
+    # Persistencia
+    # ------------------------------------------------------------------
+    def _serialize(self, acc: AccountState) -> Dict[str, Any]:
+        return {
+            "preset_id": self.config.accounts.get(acc.account_name),
+            "trading_day": acc.trading_day.isoformat() if acc.trading_day else None,
+            "day_start_balance": acc.day_start_balance,
+            "eod_hwm": acc.eod_hwm,
+            "current_balance": acc.current_balance,
+            "realized_pnl_today": acc.realized_pnl_today,
+            "qualifying_days_history": list(acc.qualifying_days_history),
+            "closed_days": list(acc.closed_days),
+        }
+
+    def _restore_state(self, acc: AccountState) -> bool:
+        saved = self._persisted.get(acc.account_name)
+        if not saved:
+            return False
+        preset_id = self.config.accounts.get(acc.account_name)
+        if saved.get("preset_id") != preset_id:
+            logger.warning(
+                "Cuenta %s: el estado persistido es del preset '%s' y ahora es '%s'. Se descarta.",
+                acc.account_name, saved.get("preset_id"), preset_id,
+            )
+            return False
+        try:
+            values = {
+                "trading_day": date.fromisoformat(saved["trading_day"]) if saved.get("trading_day") else None,
+                "day_start_balance": float(saved["day_start_balance"]),
+                "eod_hwm": float(saved["eod_hwm"]),
+                "current_balance": float(saved["current_balance"]),
+                "realized_pnl_today": float(saved.get("realized_pnl_today", 0.0)),
+                "qualifying_days_history": [float(v) for v in saved.get("qualifying_days_history", [])],
+                "closed_days": list(saved.get("closed_days", [])),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Cuenta %s: estado persistido invalido (%s). Se descarta.", acc.account_name, exc)
+            return False
+        for name, value in values.items():
+            setattr(acc, name, value)
+        acc.baseline_set = True
+        logger.info(
+            "Cuenta %s: estado restaurado (dia %s, HWM %.2f, %d dias calificados)",
+            acc.account_name, acc.trading_day, acc.eod_hwm, len(acc.qualifying_days_history),
+        )
+        return True
+
+    def _persist(self) -> None:
+        if not self.store:
+            return
+        # Se fusiona con lo ya persistido para no perder cuentas que aun no se registraron en esta ejecucion
+        merged = dict(self._persisted)
+        merged.update({name: self._serialize(acc) for name, acc in self.accounts.items()})
+        try:
+            self.store.save(merged)
+            self._persisted = merged
+        except OSError as exc:
+            logger.error("No se pudo persistir el estado del gate: %s", exc)
+
+    # ------------------------------------------------------------------
+    # Dia de trading (16:00 CT -> 16:00 CT)
+    # ------------------------------------------------------------------
+    def trading_day_label(self, moment: datetime) -> date:
+        """Fecha en la que cierra el dia de trading que contiene `moment` (corte 16:00 CT = 17:00 ET)."""
+        local = moment.astimezone(self.cme_tz)
+        rollover = time.fromisoformat(self.config.session.trading_day_rollover)
+        return local.date() + timedelta(days=1) if local.time() >= rollover else local.date()
+
+    def _roll_day_if_needed(self, acc: AccountState, moment: Optional[datetime]) -> Optional[date]:
+        label = self.trading_day_label(moment or datetime.now(self.cme_tz))
+        if acc.trading_day is None:
+            acc.trading_day = label
+            return None
+        if label <= acc.trading_day:
+            return None
+        closed_label = acc.trading_day
+        self.close_trading_day(acc.account_name, closed_label)
+        acc.trading_day = label
+        self._persist()
+        return closed_label
+
+    def close_trading_day(self, account_name: str, closed_label: Optional[date] = None) -> Optional[Dict[str, Any]]:
+        """Cierra el dia en curso: registra el PnL (record_closed_day), sube el HWM EOD y reinicia el dia."""
+        acc = self.accounts.get(account_name)
+        if not acc:
+            return None
+
+        day_profit = acc.realized_pnl_today
+        qualified = self.record_closed_day(account_name, day_profit)
+        label = closed_label or acc.trading_day
+
+        entry: Dict[str, Any] = {
+            "date": label.isoformat() if label else None,
+            "pnl": day_profit,
+            "closing_balance": acc.current_balance,
+            "qualified": qualified,
+        }
+        # La etiqueta "sabado" (entre el cierre del viernes y la reapertura del domingo) no es un dia de trading
+        if label is not None and label.weekday() < 5:
+            acc.closed_days.append(entry)
+            del acc.closed_days[:-MAX_CLOSED_DAYS_KEPT]
+
+        acc.eod_hwm = max(acc.eod_hwm, acc.current_balance)  # trailing EOD: el HWM solo sube al cerrar el dia
+        acc.day_start_balance = acc.current_balance
+        acc.realized_pnl_today = 0.0
+        acc.is_flattened = False
+        logger.info(
+            "Cuenta %s: dia %s cerrado. PnL $%.2f, balance $%.2f, HWM EOD $%.2f%s",
+            account_name, label, day_profit, acc.current_balance, acc.eod_hwm, " (dia calificado)" if qualified else "",
+        )
+        self._persist()
+        return entry
+
+    def tick(self, now: Optional[datetime] = None) -> List[Tuple[str, date]]:
+        """Cierra los dias vencidos de todas las cuentas. Lo llama el servidor periodicamente."""
+        closed: List[Tuple[str, date]] = []
+        for acc in list(self.accounts.values()):
+            label = self._roll_day_if_needed(acc, now)
+            if label is not None:
+                closed.append((acc.account_name, label))
+        return closed
 
     def record_closed_day(self, account_name: str, day_profit: float) -> bool:
         """Registra el profit final de una jornada. Si cumple con el minimo de dia ganador en Funded, lo suma al historial."""
@@ -103,6 +237,7 @@ class RiskEngine:
                 "Cuenta %s: Dia calificado registrado ($%.2f >= $%.2f). Total calificados: %d/%d",
                 account_name, day_profit, min_amount, len(acc.qualifying_days_history), acc.preset.min_profit_days_required
             )
+            self._persist()
             return True
         return False
 
@@ -200,32 +335,46 @@ class RiskEngine:
         active_count = len(acc.current_positions)
         logger.info("Cuenta %s reconciliada con %d posiciones activas", account_name, active_count)
 
-    def update_telemetry(self, t: TelemetryUpdate) -> None:
+    def _enforce_consistency_cap(self, acc: AccountState) -> None:
+        """Eval: si el profit de hoy alcanza consistency_cap_pct del target, marca aplanado obligatorio."""
+        preset = acc.preset
+        if not (
+            preset.phase == "eval"
+            and preset.consistency_cap_pct
+            and preset.profit_target
+            and preset.lock_day_after_consistency_cap
+        ):
+            return
+        cap = preset.profit_target * preset.consistency_cap_pct
+        if acc.realized_pnl_today >= cap:
+            acc.is_flattened = True
+            logger.warning(
+                "Cuenta Eval %s: Profit de hoy ($%.2f) alcanzo el tope de 50%% ($%.2f). Marcando aplanado obligatorio.",
+                acc.account_name, acc.realized_pnl_today, cap,
+            )
+
+    def update_telemetry(self, t: TelemetryUpdate, now: Optional[datetime] = None) -> None:
         acc = self.accounts.get(t.account)
         if not acc:
             acc = self.register_account(t.account)
 
-        if t.current_balance is not None:
-            acc.current_balance = t.current_balance
-            if acc.current_balance > acc.eod_hwm:
-                acc.eod_hwm = acc.current_balance
+        self._roll_day_if_needed(acc, now)
 
+        if t.current_balance is not None:
+            if not acc.baseline_set:
+                # Primer balance real de la cuenta: fija el baseline del dia y del HWM EOD
+                acc.day_start_balance = t.current_balance
+                acc.eod_hwm = t.current_balance
+                acc.baseline_set = True
+            acc.current_balance = t.current_balance
+
+        # PnL del dia: el valor explicito manda; si no, se deriva del balance (balance - balance de inicio del dia)
         if t.realized_pnl_today is not None:
             acc.realized_pnl_today = t.realized_pnl_today
-            # Si es cuenta eval y alcanza el consistency_cap_pct, marcar aplanado obligatorio
-            if (
-                acc.preset.phase == "eval"
-                and acc.preset.consistency_cap_pct
-                and acc.preset.profit_target
-                and acc.preset.lock_day_after_consistency_cap
-            ):
-                cap = acc.preset.profit_target * acc.preset.consistency_cap_pct
-                if acc.realized_pnl_today >= cap:
-                    acc.is_flattened = True
-                    logger.warning(
-                        "Cuenta Eval %s: Profit de hoy ($%.2f) alcanzo el tope de 50%% ($%.2f). Marcando aplanado obligatorio.",
-                        acc.account_name, acc.realized_pnl_today, cap
-                    )
+        elif t.current_balance is not None:
+            acc.realized_pnl_today = acc.current_balance - acc.day_start_balance
+        if t.realized_pnl_today is not None or t.current_balance is not None:
+            self._enforce_consistency_cap(acc)
 
         if t.unrealized_pnl is not None:
             acc.unrealized_pnl = t.unrealized_pnl
@@ -234,6 +383,8 @@ class RiskEngine:
             acc.current_positions.clear()
             for p in t.positions:
                 acc.current_positions[p.instrument] = p
+
+        self._persist()
 
     def evaluate_authorization(
         self, req: AuthRequest, current_time: Optional[datetime] = None
@@ -261,6 +412,7 @@ class RiskEngine:
                 )
 
         preset = acc.preset
+        self._roll_day_if_needed(acc, current_time)  # cierra el dia anterior si ya cruzo 16:00 CT
 
         # 3. Verificación de pausa de estrategia o cuenta (Criterio 7)
         if self.strategy_paused.get(req.strategy_id, False):

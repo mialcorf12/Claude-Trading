@@ -133,3 +133,17 @@ Y en la terminal de Python verás el log del cliente conectado y la reconciliaci
 - **Logs y timestamps** usan `server.log_timezone` (default `America/Chicago`, con sufijo CST/CDT). Para ver el reloj fijo de Costa Rica: `log_timezone: "America/Costa_Rica"`.
 - `tzdata` es obligatorio en Windows para que Python resuelva `America/Chicago`.
 - Los campos `session_start_time` / `session_flatten_time` de cada preset estan en hora de Chicago y solo aplican en `session.mode: "rth_only"`.
+
+---
+
+## 7. Dia de trading, estado persistido y `record_closed_day`
+
+- **Dia de trading = 16:00 CT a 16:00 CT** (17:00 ET, liquidacion del CME), configurable en `session.trading_day_rollover`. En reloj de Costa Rica: 15:00 en verano, 16:00 en invierno.
+- Al cruzar ese corte el gate **cierra el dia automaticamente** (tick cada 30 s, y tambien al recibir telemetria o autorizar):
+  - registra el PnL del dia (`record_closed_day`): en Funded/Payout cuenta como dia calificado si supera `min_profit_day_amount`;
+  - sube el **HWM del trailing EOD** con el balance de cierre (el HWM ya no sube intradia);
+  - reinicia PnL diario y el flatten diario.
+- **PnL del dia = balance actual - balance al inicio del dia.** NT8 envia `CashValue` como balance; el gate calcula el resto.
+- **Estado persistido** en `state/gate_state.json` (`server.state_path`): baseline diario, HWM EOD, dias calificados y ultimos 90 dias cerrados. Sobrevive reinicios del gate. Si el archivo es ilegible se ignora y se registra un warning.
+- **Primer arranque de una cuenta:** el baseline es el primer balance que reporte NT8. Arranca el gate **antes del corte de las 16:00 CT** (o al inicio de la sesion) para que el PnL del primer dia sea correcto; si lo arrancas a mitad del dia, el PnL ya realizado ese dia no cuenta.
+- **No borres `state/`** en una cuenta Funded/Payout: contiene el historial de dias calificados para el payout. Respaldalo junto con `logs/`.

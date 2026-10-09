@@ -69,12 +69,13 @@ Origen: aclaraciones del usuario (operador en Costa Rica, UTC-6 fijo; Chicago us
   - **Descripción:** Presets `25k/50k/100k_flex_payout` con los datos de `Rules/Lucid.xlsx` (columnas FLEX PAYOUT). Nueva fase `payout`, tratada como funded en piso de liquidación, bloqueo del día calificado y elegibilidad (`is_funded_like`).
   - **Verificación:** `python3 -m unittest discover tests` (53 OK, RED previo con 6 errores). Presets cargados desde el workbook: payout 2.000/4.000/6.000 -> balance_for_payout 28.100/56.100/109.100.
 
-- [ ] **TASK-09: Cierre automático del día de trading (`record_closed_day`)**
+- [x] **TASK-09: Cierre automático del día de trading (`record_closed_day`)**
   - **Ruta:** Inline.
   - **Archivos:** `src/gate/risk_engine.py`, `src/gate/state_store.py`, `src/gate/server.py`, `src/gate/main.py`, `src/gate/config.py`, `config/lucid_rules.yaml`, `ninjatrader/Custom/Strategies/AuthorizedStrategyBase.cs`, `tests/test_trading_day.py`, `docs/RUNBOOK_VPS_WINDOWS.md`
   - **Descripción:** Día de trading = 16:00 CT a 16:00 CT (rollover configurable `session.trading_day_rollover`). Python calcula el PnL del día como `balance - day_start_balance` (NT8 envía CashValue), cierra el día al cruzar el rollover (tick periódico + al autorizar), llama `record_closed_day`, resetea PnL diario/flatten, actualiza HWM, y persiste el estado en JSON para sobrevivir reinicios.
   - **Supuesto a confirmar:** el día de Lucid cierra a las 16:00 CT (17:00 ET, liquidación CME).
-  - **Verificación:** tests de rollover, baseline, persistencia y tick del servidor.
+  - **Cambios derivados:** HWM del trailing EOD solo sube al cerrar el día (antes subía intradía); C# envía `CashValue` (antes `BuyingPower`) y `UnrealizedProfitLoss` de cuenta; JSON de C# con `CultureInfo.InvariantCulture` (coma decimal en es-CR rompería el JSON).
+  - **Verificación:** `python3 -m unittest discover tests` (72 OK, RED previo). C# sin compilar en este entorno: requiere F5 en NT8.
 
 ## Verificación y Cierre
 - Cobertura de pruebas unitarias e integración en Python.

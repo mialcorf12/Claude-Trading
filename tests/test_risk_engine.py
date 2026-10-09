@@ -218,7 +218,8 @@ class TestFundedPayoutRules(unittest.TestCase):
 
     def test_funded_floor_stops_trailing_at_min_account_balance(self):
         engine = self._engine()
-        self._telemetry(engine, balance=27000.0, pnl_today=0.0)  # HWM 27.000: trail 26.000 > 25.100
+        self._telemetry(engine, balance=27000.0, pnl_today=0.0)
+        engine.close_trading_day(self.ACCOUNT)  # trailing EOD: el HWM sube a 27.000 al cerrar el dia (trail 26.000 > 25.100)
         self._telemetry(engine, balance=25100.0, pnl_today=0.0)
         breached = self._auth(engine)
         self.assertFalse(breached.allow)
@@ -329,7 +330,8 @@ class TestPayoutPhaseRules(unittest.TestCase):
         self.assertTrue(self._auth().allow)
 
     def test_trailing_floor_stops_at_min_account_balance(self):
-        self._telemetry(29000.0, 0.0)  # HWM 29.000: trail 28.000 > 25.100
+        self._telemetry(29000.0, 0.0)
+        self.engine.close_trading_day(self.ACCOUNT)  # trailing EOD: HWM 29.000 -> trail 28.000 > 25.100
         self._telemetry(25100.0, 0.0)
         breached = self._auth()
         self.assertFalse(breached.allow)

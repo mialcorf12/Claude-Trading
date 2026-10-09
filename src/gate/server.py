@@ -15,6 +15,7 @@ from src.gate.risk_engine import (
     PositionState,
     TelemetryUpdate,
 )
+from src.gate.state_store import StateStore
 
 logger = logging.getLogger("gate.server")
 
@@ -43,9 +44,16 @@ class AuditLogger:
 
 
 class GateServer:
-    def __init__(self, config: GateConfig, risk_engine: Optional[RiskEngine] = None):
+    def __init__(
+        self,
+        config: GateConfig,
+        risk_engine: Optional[RiskEngine] = None,
+        trading_day_tick_seconds: float = 30.0,
+    ):
         self.config = config
-        self.risk_engine = risk_engine or RiskEngine(config)
+        self.risk_engine = risk_engine or RiskEngine(config, StateStore(config.server.state_path))
+        self.trading_day_tick_seconds = trading_day_tick_seconds
+        self._trading_day_task: Optional[asyncio.Task] = None
         self.log_tz = zoneinfo.ZoneInfo(config.server.log_timezone)
         self.audit = AuditLogger(config.server.audit_log_path, self.log_tz)
         self.server: Optional[asyncio.Server] = None
@@ -67,6 +75,7 @@ class GateServer:
 
         # Iniciar latido de corazon periodico
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        self._trading_day_task = asyncio.create_task(self._trading_day_loop())
 
     async def stop(self) -> None:
         self._running = False
@@ -74,6 +83,13 @@ class GateServer:
             self._heartbeat_task.cancel()
             try:
                 await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._trading_day_task:
+            self._trading_day_task.cancel()
+            try:
+                await self._trading_day_task
             except asyncio.CancelledError:
                 pass
 
@@ -116,6 +132,19 @@ class GateServer:
                 break
             except Exception as e:
                 logger.error("Error en heartbeat loop: %s", e)
+
+    async def _trading_day_loop(self) -> None:
+        """Cierra los dias de trading vencidos (16:00 CT). Corre al arrancar (dias perdidos) y luego periodicamente."""
+        while self._running:
+            try:
+                for account, closed_day in self.risk_engine.tick():
+                    self.audit.log_event("TRADING_DAY_CLOSED", {"account": account, "day": closed_day.isoformat()})
+                await asyncio.sleep(self.trading_day_tick_seconds)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # un fallo del cierre no debe tumbar el gate
+                logger.error("Error cerrando el dia de trading: %s", exc)
+                await asyncio.sleep(self.trading_day_tick_seconds)
 
     async def broadcast_command(self, action: str, **kwargs) -> None:
         """Envia comandos dinamicos hacia NT8 (e.g. PAUSE, FLATTEN)."""

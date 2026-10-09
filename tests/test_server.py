@@ -104,6 +104,24 @@ class TestGateServer(unittest.IsolatedAsyncioTestCase):
             if msg.get("type") != "HEARTBEAT":
                 return msg
 
+    async def test_telemetry_with_balance_only_derives_daily_pnl_over_the_wire(self):
+        reader, writer = await asyncio.open_connection("127.0.0.1", 9876)
+        # Formato que envia NT8: balance y unrealized, sin realized_pnl_today
+        writer.write(encode_message({
+            "type": "TELEMETRY", "account": "Sim101", "strategy_id": "s",
+            "current_balance": 25080.5, "unrealized_pnl": 0,
+        }))
+        writer.write(encode_message({"type": "HEARTBEAT"}))  # el ACK confirma que el TELEMETRY ya se proceso
+        await writer.drain()
+        while decode_message((await reader.readline()).decode())["type"] != "HEARTBEAT_ACK":
+            pass
+
+        acc = self.risk_engine.get_account_state("Sim101")
+        self.assertEqual(acc.current_balance, 25080.5)
+        self.assertEqual(acc.realized_pnl_today, 80.5)
+        writer.close()
+        await writer.wait_closed()
+
     async def test_audit_log_timestamps_use_configured_timezone_not_utc(self):
         audit_path = Path(self.config.server.audit_log_path)
         first_record = json.loads(audit_path.read_text(encoding="utf-8").splitlines()[0])
@@ -135,6 +153,30 @@ class TestGateServer(unittest.IsolatedAsyncioTestCase):
 
         writer.close()
         await writer.wait_closed()
+
+
+class TestTradingDayTick(unittest.IsolatedAsyncioTestCase):
+    async def test_server_ticks_trading_day_on_start_and_periodically(self):
+        base_cfg = load_config("config/lucid_rules.yaml")
+        with tempfile.TemporaryDirectory() as tmp:
+            server_cfg = ServerConfig(
+                host="127.0.0.1", port=9877, heartbeat_interval_seconds=1,
+                audit_log_path=str(Path(tmp) / "audit.log"),
+            )
+            config = GateConfig(
+                server=server_cfg, instruments=base_cfg.instruments,
+                presets=base_cfg.presets, accounts=base_cfg.accounts,
+            )
+            engine = RiskEngine(config)
+            calls = []
+            engine.tick = lambda now=None: calls.append(now) or []
+
+            server = GateServer(config, risk_engine=engine, trading_day_tick_seconds=0.02)
+            await server.start()
+            await asyncio.sleep(0.15)
+            await server.stop()
+
+        self.assertGreaterEqual(len(calls), 3)  # un tick inmediato al arrancar (cierra dias perdidos) + periodicos
 
 
 if __name__ == "__main__":

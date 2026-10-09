@@ -9,6 +9,7 @@ using System;
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using System.IO;
 using System.Net.Sockets;
 using System.Text;
@@ -238,6 +239,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             pendingRequests[requestId] = tcs;
 
             string jsonReq = string.Format(
+                CultureInfo.InvariantCulture,
                 "{{\"type\":\"AUTH_REQUEST\",\"request_id\":\"{0}\",\"strategy_id\":\"{1}\",\"account\":\"{2}\",\"instrument\":\"{3}\",\"side\":\"{4}\",\"qty\":{5},\"stop_distance\":{6:0.##}}}\n",
                 requestId,
                 StrategyId,
@@ -293,18 +295,26 @@ namespace NinjaTrader.NinjaScript.Strategies
                 return;
 
             // Reportar telemetría a Python (Criterio 10)
+            SendTelemetry();
+        }
+
+        /// <summary>
+        /// Envía balance y PnL no realizado de la cuenta. El PnL del día lo calcula Python
+        /// (balance actual - balance al inicio del día de trading), por lo que no se envía realized_pnl_today.
+        /// </summary>
+        private void SendTelemetry()
+        {
             try
             {
-                double realized = Account != null ? Account.Get(AccountItem.RealizedProfitLoss, Currency.UsDollar) : 0.0;
-                double unrealized = Position != null ? Position.GetUnrealizedProfitLoss(PerformanceUnit.Currency) : 0.0;
-                double cash = Account != null ? Account.Get(AccountItem.BuyingPower, Currency.UsDollar) : 0.0;
+                double balance = Account != null ? Account.Get(AccountItem.CashValue, Currency.UsDollar) : 0.0;
+                double unrealized = Account != null ? Account.Get(AccountItem.UnrealizedProfitLoss, Currency.UsDollar) : 0.0;
 
                 string jsonTele = string.Format(
-                    "{{\"type\":\"TELEMETRY\",\"account\":\"{0}\",\"strategy_id\":\"{1}\",\"current_balance\":{2:0.##},\"realized_pnl_today\":{3:0.##},\"unrealized_pnl\":{4:0.##}}}\n",
+                    CultureInfo.InvariantCulture,
+                    "{{\"type\":\"TELEMETRY\",\"account\":\"{0}\",\"strategy_id\":\"{1}\",\"current_balance\":{2:0.##},\"unrealized_pnl\":{3:0.##}}}\n",
                     Account != null ? Account.Name : "Sim101",
                     StrategyId,
-                    cash,
-                    realized,
+                    balance,
                     unrealized
                 );
                 SendRaw(jsonTele);
@@ -325,7 +335,7 @@ namespace NinjaTrader.NinjaScript.Strategies
                 double entryPrice = Position != null ? Position.AveragePrice : 0.0;
 
                 string posJsonArray = currentPosQty > 0
-                    ? string.Format("[{{\"instrument\":\"{0}\",\"qty\":{1},\"entry_price\":{2:0.##},\"side\":\"{3}\"}}]",
+                    ? string.Format(CultureInfo.InvariantCulture, "[{{\"instrument\":\"{0}\",\"qty\":{1},\"entry_price\":{2:0.##},\"side\":\"{3}\"}}]",
                         Instrument != null ? Instrument.MasterInstrument.Name : "NQ", currentPosQty, entryPrice, side)
                     : "[]";
 
@@ -367,6 +377,8 @@ namespace NinjaTrader.NinjaScript.Strategies
 
                 // Enviar reconciliación inicial de posición (Criterio 11)
                 SendReconciliation();
+                // Balance inicial: permite a Python fijar el baseline del día y calcular el PnL diario
+                SendTelemetry();
             }
             catch (Exception ex)
             {

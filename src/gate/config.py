@@ -20,6 +20,7 @@ class ServerConfig:
     default_fail_action: Literal["hold", "flatten"] = "flatten"
     audit_log_path: str = "logs/gate_audit.log"
     log_timezone: str = "America/Chicago"  # Zona horaria de logs y timestamps (reemplaza UTC)
+    state_path: str = "state/gate_state.json"  # Estado persistido (baseline diario, HWM EOD, dias calificados)
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,7 @@ class SessionConfig:
     daily_break_start: str = "16:00"    # 16:00 CT = 17:00 ET: inicio del break de mantenimiento
     daily_break_end: str = "17:00"      # 17:00 CT = 18:00 ET: reapertura Globex
     pre_break_buffer_minutes: int = 5   # Bloqueo de entradas 5 min antes (15:55 CT)
+    trading_day_rollover: str = "16:00" # Corte del dia de trading / EOD: 16:00 CT = 17:00 ET (hora de Chicago)
 
 
 @dataclass(frozen=True)
@@ -124,6 +126,7 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
         default_fail_action=srv_data.get("default_fail_action", "flatten"),
         audit_log_path=srv_data.get("audit_log_path", "logs/gate_audit.log"),
         log_timezone=srv_data.get("log_timezone", "America/Chicago"),
+        state_path=srv_data.get("state_path", "state/gate_state.json"),
     )
 
     sess_data = data.get("session", {})
@@ -133,6 +136,7 @@ def load_config(file_path: str | Path = "config/lucid_rules.yaml") -> GateConfig
         daily_break_start=sess_data.get("daily_break_start", "16:00"),
         daily_break_end=sess_data.get("daily_break_end", "17:00"),
         pre_break_buffer_minutes=int(sess_data.get("pre_break_buffer_minutes", 5)),
+        trading_day_rollover=sess_data.get("trading_day_rollover", "16:00"),
     )
 
     instruments: Dict[str, InstrumentConfig] = {}

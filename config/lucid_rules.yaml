@@ -10,6 +10,7 @@ server:
   heartbeat_interval_seconds: 5      # Intervalo de latido obligatorio
   default_fail_action: "flatten"     # "hold" | "flatten" al perder conexion o heartbeat
   audit_log_path: "logs/gate_audit.log"
+  state_path: "state/gate_state.json"  # Estado persistido: baseline diario, HWM EOD, dias calificados
   log_timezone: "America/Chicago"    # Zona horaria de logs/timestamps. Para reloj fijo de Costa Rica (UTC-6): "America/Costa_Rica"
 
 # Hora oficial del CME = America/Chicago (CST invierno UTC-6 / CDT verano UTC-5, con DST).
@@ -20,6 +21,7 @@ session:
   daily_break_start: "16:00"          # 16:00 CT = 17:00 ET: inicio del break de mantenimiento (L-J) / cierre semanal (V)
   daily_break_end: "17:00"            # 17:00 CT = 18:00 ET: reapertura Globex (diaria y domingo)
   pre_break_buffer_minutes: 5         # Bloquear entradas 5 min antes del break (15:55 CT)
+  trading_day_rollover: "16:00"       # Corte del dia de trading y del EOD: 16:00 CT = 17:00 ET (liquidacion CME)
 
 instruments:
   NQ:
