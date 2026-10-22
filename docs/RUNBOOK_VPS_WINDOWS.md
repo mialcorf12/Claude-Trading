@@ -55,7 +55,7 @@ Ran 19 tests in 10.854s
 1. Copiar las clases C# a la carpeta de NinjaTrader: (Ninjatrader cerrado)
    ```cmd
    copy ninjatrader\Custom\Strategies\AuthorizedStrategyBase.cs "C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\"
-   copy ninjatrader\Custom\Strategies\SampleAuthorizedNQStrategy.cs "C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\"
+   copy ninjatrader\Custom\Strategies\NQ_ORB.cs "C:\Users\Administrator\Documents\NinjaTrader 8\bin\Custom\Strategies\"
    ```
 
 2. En NinjaTrader 8:
@@ -89,14 +89,14 @@ python -m src.gate.main --config config/lucid_rules.yaml
 ## 5. Verificación Operativa
 
 1. **Backtesting en Strategy Analyzer:**
-   - Cargar `SampleAuthorizedNQStrategy` en Strategy Analyzer.
+   - Cargar `NQ_ORB` en Strategy Analyzer.
    - Correr backtest histórico en NQ o MNQ.
    - Notar que opera normalmente sin requerir socket ni bloquearse.
 
 2. **Operación en Vivo / Sim101:**
    - Activar la estrategia en NinjaTrader 8
    - Abrí un chart de MNQ (1 minuto) asignado a la cuenta Sim101.
-   - Hacé click derecho en el chart > Strategies > seleccioná SampleAuthorizedNQStrategy.
+   - Hacé click derecho en el chart > Strategies > seleccioná NQ_ORB.
    - Verificá que en el panel derecho:
       - Enable Gate in Realtime = True
       - Gate Host = 127.0.0.1
@@ -105,14 +105,14 @@ python -m src.gate.main --config config/lucid_rules.yaml
       - Dale a OK.
    - Revisá la ventana Output de NinjaTrader (New > NinjaScript Output). Deberías ver:
      ```text
-     [YYYY-MM-DD HH:MM:SS.FFF CDT] [ORB_NQ_SAMPLE_01] [CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
-     [YYYY-MM-DD HH:MM:SS.FFF CDT] [ORB_NQ_SAMPLE_01] [RECONCILE] Información de posición enviada al Gate
+     [YYYY-MM-DD HH:MM:SS.FFF CDT] [NQ_ORB_08_30] [CONNECTED] Conectado exitosamente al Gate en 127.0.0.1:8765
+     [YYYY-MM-DD HH:MM:SS.FFF CDT] [NQ_ORB_08_30] [RECONCILE] Información de posición enviada al Gate
      ```
    - Al generarse una señal, verificar en `logs/gate_audit.log` el registro de auditoría con la autorización concedida o denegada.
 
 Activar la estrategia en NinjaTrader 8
 Abrí un chart de MNQ (1 minuto) asignado a la cuenta Sim101.
-Hacé click derecho en el chart > Strategies > seleccioná SampleAuthorizedNQStrategy.
+Hacé click derecho en el chart > Strategies > seleccioná NQ_ORB.
 Verificá que en el panel derecho:
 Enable Gate in Realtime = True
 Gate Host = 127.0.0.1

@@ -216,7 +216,7 @@ presets:
     max_contracts_mini: 4
     max_contracts_micro: 40
     min_trade_duration_seconds: 10.0
-    session_start_time: "08:30"
+    session_start_time: "00:00"
     session_flatten_time: "14:55"
 
   "100k_flex_payout":
@@ -248,3 +248,4 @@ accounts:
   "Sim101": "25k_flex_eval"
   "Lucid_25K_01": "25k_flex_eval"
   "Lucid_50K_01": "50k_flex_eval"
+  "LFF02592771620001": "25k_flex_payout"

@@ -1,5 +1,5 @@
 // ==============================================================================
-// NinjaTrader 8 - SampleAuthorizedNQStrategy
+// NinjaTrader 8 - NQ_ORB
 // Estrategia de ejemplo basada en Opening Range Breakout (ORB) para NQ / MNQ
 // Hereda de AuthorizedStrategyBase.
 // ==============================================================================
@@ -16,7 +16,7 @@ using NinjaTrader.NinjaScript.Strategies;
 
 namespace NinjaTrader.NinjaScript.Strategies
 {
-    public class SampleAuthorizedNQStrategy : AuthorizedStrategyBase
+    public class NQ_ORB : AuthorizedStrategyBase
     {
         #region Strategy Parameters
         [NinjaScriptProperty]
@@ -58,8 +58,8 @@ namespace NinjaTrader.NinjaScript.Strategies
             if (State == State.SetDefaults)
             {
                 Description = "Estrategia de ejemplo ORB para NQ/MNQ con autorización de riesgo Python";
-                Name = "SampleAuthorizedNQStrategy";
-                StrategyId = "ORB_NQ_SAMPLE_01";
+                Name = "NQ_ORB";
+                StrategyId = "NQ_ORB_08_30";
             }
             else if (State == State.DataLoaded)
             {

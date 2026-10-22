@@ -39,7 +39,7 @@ Implementar el gate de autorización fail-closed vía TCP entre Python y NinjaTr
 
 - [x] **TASK-05: Clase base NinjaScript y estrategia de referencia (`AuthorizedStrategyBase.cs`)**
   - **Ruta:** Inline
-  - **Archivos:** `ninjatrader/Custom/Strategies/AuthorizedStrategyBase.cs`, `ninjatrader/Custom/Strategies/SampleAuthorizedNQStrategy.cs`, `src/gate/main.py`, `docs/RUNBOOK_VPS_WINDOWS.md`
+  - **Archivos:** `ninjatrader/Custom/Strategies/AuthorizedStrategyBase.cs`, `ninjatrader/Custom/Strategies/NQ_ORB.cs`, `src/gate/main.py`, `docs/RUNBOOK_VPS_WINDOWS.md`
   - **Descripción:** Implementar `AuthorizedStrategyBase` en C# para NinjaTrader 8: detección de Strategy Analyzer vs Live/Sim, socket TCP no bloqueante a Python, consulta previa a entries, enforcement de Stop Loss obligatorio local, bypass de SL/TP, listener de flags PAUSE/FLATTEN, telemetría en OnExecutionUpdate y reconciliación al inicio.
   - **Verificación:** Código compilable en .NET Framework 4.8 / NT8, contratos validados contra la suite de tests y runbook de VPS documentado. Commit `7007c2d`.
 
