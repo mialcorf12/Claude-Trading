@@ -109,7 +109,7 @@ namespace NinjaTrader.NinjaScript.Strategies
             }
 
             // 2. Disparo de señales tras el rango
-            if (orbRangeFormed && !tradedToday && Position.MarketPosition == MarketPosition.Flat)
+            if (orbRangeFormed && Position.MarketPosition == MarketPosition.Flat) // && !tradedToday
             {
                 // Ruptura alcista del ORB High
                 if (Close[0] > orbHigh && Close[1] <= orbHigh)
